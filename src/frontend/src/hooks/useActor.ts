@@ -5,12 +5,13 @@ import { createActorWithConfig } from "../config";
 import { getSecretParameter } from "../utils/urlParams";
 import { useInternetIdentity } from "./useInternetIdentity";
 
-const ACTOR_QUERY_KEY = "actor";
+export const ACTOR_QUERY_KEY = "actor";
+
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString() ?? "anon"],
+    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
     queryFn: async () => {
       const isAuthenticated = !!identity;
 
@@ -26,35 +27,39 @@ export function useActor() {
 
       const actor = await createActorWithConfig(actorOptions);
 
-      // Wrap in try/catch so actor is ALWAYS returned even if init fails
+      // IMPORTANT: must be in try/catch -- if this throws, we still return the actor
       try {
         const adminToken = getSecretParameter("caffeineAdminToken") || "";
         await actor._initializeAccessControlWithSecret(adminToken);
       } catch (e) {
-        console.warn("Access control init skipped (non-critical):", e);
+        console.warn("_initializeAccessControlWithSecret failed (ignored):", e);
       }
 
       return actor;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
-    retryDelay: 1000,
-    refetchOnWindowFocus: false,
+    staleTime: Number.POSITIVE_INFINITY,
+    enabled: true,
   });
 
-  // When the actor becomes available, invalidate and refetch all data queries
+  // When the actor changes, invalidate and refetch all dependent queries
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
         predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
       });
+      queryClient.refetchQueries({
+        predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
+      });
     }
   }, [actorQuery.data, queryClient]);
+
+  const refetchActor = async () => {
+    await actorQuery.refetch();
+  };
 
   return {
     actor: actorQuery.data || null,
     isFetching: actorQuery.isFetching,
-    isError: actorQuery.isError,
-    refetch: actorQuery.refetch,
+    refetchActor,
   };
 }

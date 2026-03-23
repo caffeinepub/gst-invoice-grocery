@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LineItem, UserProfile } from "../backend.d";
-import { useActor } from "./useActor";
+import { ACTOR_QUERY_KEY, useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 const FIXED_ADMIN_PRINCIPALS = [
@@ -9,10 +9,11 @@ const FIXED_ADMIN_PRINCIPALS = [
 
 const DATA_QUERY_DEFAULTS = {
   staleTime: 0,
-  refetchOnMount: true,
-  retry: 2,
-  retryDelay: 1000,
-} as const;
+  refetchOnMount: "always" as const,
+  refetchOnWindowFocus: false,
+  retry: 3,
+  retryDelay: 2000,
+};
 
 export function useGetStore() {
   const { actor, isFetching } = useActor();
@@ -21,8 +22,10 @@ export function useGetStore() {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        return await actor.getStore();
-      } catch {
+        const result = await actor.getStore();
+        return result;
+      } catch (e) {
+        console.error("getStore error:", e);
         return null;
       }
     },
@@ -38,8 +41,10 @@ export function useGetStoreSummary() {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        return await actor.getStoreSummary();
-      } catch {
+        const result = await actor.getStoreSummary();
+        return result;
+      } catch (e) {
+        console.error("getStoreSummary error:", e);
         return null;
       }
     },
@@ -55,8 +60,10 @@ export function useGetProducts() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getProducts();
-      } catch {
+        const result = await actor.getProducts();
+        return result;
+      } catch (e) {
+        console.error("getProducts error:", e);
         return [];
       }
     },
@@ -72,8 +79,10 @@ export function useGetInvoices() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getInvoices();
-      } catch {
+        const result = await actor.getInvoices();
+        return result;
+      } catch (e) {
+        console.error("getInvoices error:", e);
         return [];
       }
     },
@@ -312,7 +321,8 @@ export function useGetAllStoresAdmin() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getAllStoresAdmin();
+        const result = await actor.getAllStoresAdmin();
+        return result;
       } catch (e) {
         console.error("getAllStoresAdmin error:", e);
         return [];
@@ -340,19 +350,22 @@ export function useAddCreditsAdmin() {
   });
 }
 
-// Hook to refresh all data queries
+// Refresh all data queries
 export function useRefreshAllData() {
   const qc = useQueryClient();
-  const { refetch: refetchActor } = useActor();
+  const { refetchActor } = useActor();
 
   return async () => {
-    // First refetch the actor, then all data queries
-    await refetchActor();
+    try {
+      await refetchActor();
+    } catch (e) {
+      console.warn("Actor refetch failed:", e);
+    }
     await qc.invalidateQueries({
-      predicate: (q) => !q.queryKey.includes("actor"),
+      predicate: (q) => !q.queryKey.includes(ACTOR_QUERY_KEY),
     });
     await qc.refetchQueries({
-      predicate: (q) => !q.queryKey.includes("actor"),
+      predicate: (q) => !q.queryKey.includes(ACTOR_QUERY_KEY),
     });
   };
 }
