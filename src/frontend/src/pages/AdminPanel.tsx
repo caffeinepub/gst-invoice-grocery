@@ -11,14 +11,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Check, Copy, Plus, ShieldCheck, Store } from "lucide-react";
+import { Check, Copy, Plus, RefreshCw, ShieldCheck, Store } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useActor } from "../hooks/useActor";
 import {
   useAddCreditsAdmin,
   useGetAllStoresAdmin,
   useIsCallerAdmin,
+  useRefreshAllData,
 } from "../hooks/useQueries";
 
 function CopyButton({ text }: { text: string }) {
@@ -126,12 +128,24 @@ function AddCreditsForm({
 }
 
 export default function AdminPanel() {
+  const { isFetching: actorFetching } = useActor();
   const { data: isAdmin, isLoading: isAdminLoading } = useIsCallerAdmin();
   const { data: stores = [], isLoading: storesLoading } =
     useGetAllStoresAdmin();
   const [addingFor, setAddingFor] = useState<string | null>(null);
+  const refreshAllData = useRefreshAllData();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  if (isAdminLoading) {
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshAllData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  if (actorFetching || isAdminLoading) {
     return (
       <div className="space-y-4" data-ocid="admin.loading_state">
         {[1, 2, 3].map((i) => (
@@ -180,10 +194,24 @@ export default function AdminPanel() {
             Manage store credits and accounts
           </p>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <Badge className="bg-indigo/10 text-indigo border-indigo/20 font-semibold">
             {stores.length} Stores
           </Badge>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing || storesLoading}
+            className="w-8 h-8 rounded-lg bg-indigo/10 hover:bg-indigo/20 flex items-center justify-center transition-colors disabled:opacity-50"
+            title="Refresh store list"
+            data-ocid="admin.toggle"
+          >
+            <RefreshCw
+              className={`w-4 h-4 text-indigo ${
+                isRefreshing || storesLoading ? "animate-spin" : ""
+              }`}
+            />
+          </button>
         </div>
       </div>
 

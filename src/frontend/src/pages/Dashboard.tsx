@@ -4,14 +4,20 @@ import {
   ArrowRight,
   Package,
   Receipt,
+  RefreshCw,
   Store,
   TrendingUp,
   Wallet,
   Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useGetStoreSummary } from "../hooks/useQueries";
-import { useGetMyCredits } from "../hooks/useQueries";
+import { useState } from "react";
+import { useActor } from "../hooks/useActor";
+import {
+  useGetMyCredits,
+  useGetStoreSummary,
+  useRefreshAllData,
+} from "../hooks/useQueries";
 
 const fmt = (paise: bigint) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
@@ -23,8 +29,20 @@ interface Props {
 }
 
 export default function Dashboard({ onNavigate }: Props) {
+  const { isFetching: actorFetching } = useActor();
   const { data: summary, isLoading } = useGetStoreSummary();
   const { data: credits } = useGetMyCredits();
+  const refreshAllData = useRefreshAllData();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshAllData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const creditCount = credits !== undefined ? Number(credits) : null;
 
@@ -46,7 +64,7 @@ export default function Dashboard({ onNavigate }: Props) {
           ? "bg-amber-50 border border-amber-200"
           : "bg-emerald-50 border border-emerald-200";
 
-  if (isLoading) {
+  if (actorFetching || isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-28 rounded-2xl" />
@@ -86,6 +104,18 @@ export default function Dashboard({ onNavigate }: Props) {
           <Store className="w-4 h-4 mr-2" /> Set Up Store
           <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="mt-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-saffron transition-colors disabled:opacity-50"
+          data-ocid="dashboard.secondary_button"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
+          />
+          {isRefreshing ? "Retrying..." : "Retry loading data"}
+        </button>
       </motion.div>
     );
   }
@@ -146,6 +176,20 @@ export default function Dashboard({ onNavigate }: Props) {
         <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/10" />
         <div className="absolute -bottom-8 -right-2 w-24 h-24 rounded-full bg-white/8" />
         <div className="absolute top-2 right-16 w-8 h-8 rounded-full bg-white/15" />
+
+        {/* Refresh button */}
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors disabled:opacity-60 z-10"
+          title="Refresh data"
+          data-ocid="dashboard.toggle"
+        >
+          <RefreshCw
+            className={`w-4 h-4 text-white ${isRefreshing ? "animate-spin" : ""}`}
+          />
+        </button>
 
         <div className="relative">
           <p className="text-white/70 text-xs font-medium uppercase tracking-widest mb-1">

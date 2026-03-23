@@ -7,6 +7,13 @@ const FIXED_ADMIN_PRINCIPALS = [
   "f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe",
 ];
 
+const DATA_QUERY_DEFAULTS = {
+  staleTime: 0,
+  refetchOnMount: true,
+  retry: 2,
+  retryDelay: 1000,
+} as const;
+
 export function useGetStore() {
   const { actor, isFetching } = useActor();
   return useQuery({
@@ -20,6 +27,7 @@ export function useGetStore() {
       }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -36,6 +44,7 @@ export function useGetStoreSummary() {
       }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -45,9 +54,14 @@ export function useGetProducts() {
     queryKey: ["products"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getProducts();
+      try {
+        return await actor.getProducts();
+      } catch {
+        return [];
+      }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -57,9 +71,14 @@ export function useGetInvoices() {
     queryKey: ["invoices"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getInvoices();
+      try {
+        return await actor.getInvoices();
+      } catch {
+        return [];
+      }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -69,9 +88,14 @@ export function useGetNextInvoiceNumber() {
     queryKey: ["nextInvoiceNumber"],
     queryFn: async () => {
       if (!actor) return 1n;
-      return actor.getNextInvoiceNumber();
+      try {
+        return await actor.getNextInvoiceNumber();
+      } catch {
+        return 1n;
+      }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -229,9 +253,14 @@ export function useGetCallerProfile() {
     queryKey: ["callerProfile"],
     queryFn: async (): Promise<UserProfile | null> => {
       if (!actor) return null;
-      return actor.getCallerUserProfile();
+      try {
+        return await actor.getCallerUserProfile();
+      } catch {
+        return null;
+      }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -248,6 +277,7 @@ export function useGetMyCredits() {
       }
     },
     enabled: !!actor && !isFetching,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -268,6 +298,7 @@ export function useIsCallerAdmin() {
       }
     },
     enabled: !!principal,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -277,7 +308,6 @@ export function useGetAllStoresAdmin() {
   const principal = identity?.getPrincipal().toString() ?? "";
 
   return useQuery({
-    // Include principal in key so query re-runs fresh after login
     queryKey: ["allStoresAdmin", principal],
     queryFn: async () => {
       if (!actor) return [];
@@ -289,6 +319,7 @@ export function useGetAllStoresAdmin() {
       }
     },
     enabled: !!actor && !isFetching && !!principal,
+    ...DATA_QUERY_DEFAULTS,
   });
 }
 
@@ -307,4 +338,21 @@ export function useAddCreditsAdmin() {
       qc.invalidateQueries({ queryKey: ["myCredits"] });
     },
   });
+}
+
+// Hook to refresh all data queries
+export function useRefreshAllData() {
+  const qc = useQueryClient();
+  const { refetch: refetchActor } = useActor();
+
+  return async () => {
+    // First refetch the actor, then all data queries
+    await refetchActor();
+    await qc.invalidateQueries({
+      predicate: (q) => !q.queryKey.includes("actor"),
+    });
+    await qc.refetchQueries({
+      predicate: (q) => !q.queryKey.includes("actor"),
+    });
+  };
 }

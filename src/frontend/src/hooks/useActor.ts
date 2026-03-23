@@ -10,7 +10,7 @@ export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
+    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString() ?? "anon"],
     queryFn: async () => {
       const isAuthenticated = !!identity;
 
@@ -25,30 +25,28 @@ export function useActor() {
       };
 
       const actor = await createActorWithConfig(actorOptions);
-      // Always wrap in try/catch so the actor is returned even if initialization fails
+
+      // Wrap in try/catch so actor is ALWAYS returned even if init fails
       try {
         const adminToken = getSecretParameter("caffeineAdminToken") || "";
         await actor._initializeAccessControlWithSecret(adminToken);
-      } catch (_e) {
-        console.warn("Access control initialization skipped:", _e);
+      } catch (e) {
+        console.warn("Access control init skipped (non-critical):", e);
       }
+
       return actor;
     },
-    staleTime: Number.POSITIVE_INFINITY,
-    enabled: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: 2,
+    retryDelay: 1000,
+    refetchOnWindowFocus: false,
   });
 
+  // When the actor becomes available, invalidate and refetch all data queries
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
-        predicate: (query) => {
-          return !query.queryKey.includes(ACTOR_QUERY_KEY);
-        },
-      });
-      queryClient.refetchQueries({
-        predicate: (query) => {
-          return !query.queryKey.includes(ACTOR_QUERY_KEY);
-        },
+        predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
       });
     }
   }, [actorQuery.data, queryClient]);
@@ -56,5 +54,7 @@ export function useActor() {
   return {
     actor: actorQuery.data || null,
     isFetching: actorQuery.isFetching,
+    isError: actorQuery.isError,
+    refetch: actorQuery.refetch,
   };
 }
