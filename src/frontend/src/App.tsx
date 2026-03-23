@@ -205,6 +205,17 @@ export default function App() {
               )}
               Get Started Free
             </Button>
+
+            <p className="mt-6 text-xs text-muted-foreground">
+              Developed by <span className="font-medium">Ankit Verma</span> ·
+              Mob:{" "}
+              <a
+                href="tel:7023285769"
+                className="text-saffron hover:underline font-medium"
+              >
+                7023285769
+              </a>
+            </p>
           </motion.div>
         ) : isInactive ? (
           <InactiveAccount principal={principal} onLogout={clear} />
@@ -276,14 +287,13 @@ export default function App() {
       {/* Footer — desktop only */}
       <footer className="hidden md:block border-t border-border bg-white py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()}. Built with ❤️ using{" "}
+          © {new Date().getFullYear()} BillKaro · Developed by{" "}
+          <span className="text-saffron font-medium">Ankit Verma</span> · Mob:{" "}
           <a
-            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-            target="_blank"
-            rel="noopener noreferrer"
+            href="tel:7023285769"
             className="text-saffron hover:underline font-medium"
           >
-            caffeine.ai
+            7023285769
           </a>
         </div>
       </footer>
