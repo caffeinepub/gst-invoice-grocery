@@ -73,9 +73,17 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function normalizePhone(phone: string): string {
+  let p = phone.replace(/\s+/g, "").replace(/^\+/, "");
+  if (p.startsWith("91") && p.length > 10) p = p.slice(2);
+  if (p.startsWith("0")) p = p.slice(1);
+  return p;
+}
+
 function WhatsAppButton({ phone }: { phone: string }) {
   const hasPhone = !!phone;
-  const waUrl = `https://wa.me/91${phone}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`;
+  const cleaned = normalizePhone(phone);
+  const waUrl = `https://wa.me/91${cleaned}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`;
 
   if (!hasPhone) {
     return (
@@ -653,7 +661,7 @@ export default function AdminPanel() {
                     {/* WhatsApp Notify Button */}
                     {store.phone ? (
                       <a
-                        href={`https://wa.me/91${store.phone}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`}
+                        href={`https://wa.me/91${normalizePhone(store.phone || "")}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center justify-center gap-2 w-full h-9 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"

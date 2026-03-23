@@ -1,13 +1,25 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -16,12 +28,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Eye, Loader2, Printer, Receipt } from "lucide-react";
+import {
+  Download,
+  Eye,
+  Loader2,
+  Pencil,
+  Printer,
+  Receipt,
+  Trash2,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
-import type { Invoice } from "../backend.d";
+import type { Invoice, LineItem } from "../backend.d";
 import ThermalReceipt, { invoiceToDisplay } from "../components/ThermalReceipt";
-import { useGetInvoices, useGetStore } from "../hooks/useQueries";
+import {
+  useDeleteInvoice,
+  useGetInvoices,
+  useGetStore,
+  useUpdateInvoice,
+} from "../hooks/useQueries";
 
 const fmt = (paise: bigint) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
@@ -30,7 +55,6 @@ const fmt = (paise: bigint) =>
 
 const fmtNum = (paise: bigint) => (Number(paise) / 100).toFixed(2);
 
-/** Simple CSV export (no external lib needed) */
 function exportToCsv(
   filename: string,
   rows: Record<string, string | number>[],
@@ -56,10 +80,38 @@ function exportToCsv(
   URL.revokeObjectURL(url);
 }
 
+function recalcLineItem(item: LineItem, isIgst: boolean): LineItem {
+  const base = item.qty * item.rate;
+  let cgstAmt = 0n;
+  let sgstAmt = 0n;
+  let igstAmt = 0n;
+  if (isIgst) {
+    igstAmt = (base * item.gstRate) / 100n;
+  } else {
+    cgstAmt = (base * item.gstRate) / 200n;
+    sgstAmt = (base * item.gstRate) / 200n;
+  }
+  const lineTotal = base + cgstAmt + sgstAmt + igstAmt;
+  return { ...item, cgstAmt, sgstAmt, igstAmt, lineTotal };
+}
+
+interface EditState {
+  invoice: Invoice;
+  customerName: string;
+  customerGstin: string;
+  isIgst: boolean;
+  lineItems: LineItem[];
+}
+
 export default function Invoices() {
   const { data: invoices = [], isLoading } = useGetInvoices();
   const { data: store } = useGetStore();
+  const deleteMutation = useDeleteInvoice();
+  const updateMutation = useUpdateInvoice();
+
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
+  const [editState, setEditState] = useState<EditState | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -78,9 +130,61 @@ export default function Invoices() {
     return list;
   }, [invoices, dateFrom, dateTo]);
 
+  const grandTotal = useMemo(() => {
+    if (!editState) return 0n;
+    return editState.lineItems.reduce((sum, item) => sum + item.lineTotal, 0n);
+  }, [editState]);
+
+  function openEdit(inv: Invoice) {
+    setEditState({
+      invoice: inv,
+      customerName: inv.customerName,
+      customerGstin: inv.customerGstin,
+      isIgst: inv.isIgst,
+      lineItems: inv.lineItems.map((li) => ({ ...li })),
+    });
+  }
+
+  function updateQty(index: number, qty: number) {
+    if (!editState) return;
+    const newItems = editState.lineItems.map((item, i) => {
+      if (i !== index) return item;
+      const updated = { ...item, qty: BigInt(Math.max(1, qty)) };
+      return recalcLineItem(updated, editState.isIgst);
+    });
+    setEditState((prev) => (prev ? { ...prev, lineItems: newItems } : prev));
+  }
+
+  function toggleGstType(isIgst: boolean) {
+    if (!editState) return;
+    const newItems = editState.lineItems.map((item) =>
+      recalcLineItem(item, isIgst),
+    );
+    setEditState((prev) =>
+      prev ? { ...prev, isIgst, lineItems: newItems } : prev,
+    );
+  }
+
+  async function handleSaveEdit() {
+    if (!editState) return;
+    await updateMutation.mutateAsync({
+      invoiceNumber: editState.invoice.invoiceNumber,
+      customerName: editState.customerName,
+      customerGstin: editState.customerGstin,
+      isIgst: editState.isIgst,
+      lineItems: editState.lineItems,
+    });
+    setEditState(null);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    await deleteMutation.mutateAsync(deleteTarget.invoiceNumber);
+    setDeleteTarget(null);
+  }
+
   const handleExportCsv = () => {
     if (filtered.length === 0) return;
-
     const summaryRows = filtered.map((inv, i) => ({
       "#": i + 1,
       "Invoice No": `#${inv.invoiceNumber.toString()}`,
@@ -95,12 +199,9 @@ export default function Invoices() {
       "Total IGST (Rs)": fmtNum(inv.totalIgst),
       "Grand Total (Rs)": fmtNum(inv.grandTotal),
     }));
-
     const fromStr = dateFrom || "all";
     const toStr = dateTo || "all";
     exportToCsv(`invoices_${fromStr}_to_${toStr}.csv`, summaryRows);
-
-    // Also export line items
     const lineRows: Record<string, string | number>[] = [];
     for (const inv of filtered) {
       for (const item of inv.lineItems) {
@@ -155,8 +256,6 @@ export default function Invoices() {
               </Button>
             </div>
           </div>
-
-          {/* Date Filter */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">
@@ -278,13 +377,38 @@ export default function Invoices() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-center gap-1">
+                            {/* View */}
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => setViewInvoice(inv)}
+                              className="h-8 w-8 p-0"
+                              title="View"
                               data-ocid={`invoices.edit_button.${i + 1}`}
                             >
                               <Eye className="w-4 h-4 text-teal" />
+                            </Button>
+                            {/* Edit */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEdit(inv)}
+                              className="h-8 w-8 p-0"
+                              title="Edit"
+                              data-ocid={`invoices.save_button.${i + 1}`}
+                            >
+                              <Pencil className="w-4 h-4 text-indigo-500" />
+                            </Button>
+                            {/* Delete */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteTarget(inv)}
+                              className="h-8 w-8 p-0"
+                              title="Delete"
+                              data-ocid={`invoices.delete_button.${i + 1}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
                             </Button>
                           </div>
                         </TableCell>
@@ -298,7 +422,7 @@ export default function Invoices() {
         </CardContent>
       </Card>
 
-      {/* Invoice View Dialog */}
+      {/* View Dialog */}
       <Dialog
         open={!!viewInvoice}
         onOpenChange={(o) => !o && setViewInvoice(null)}
@@ -328,6 +452,217 @@ export default function Invoices() {
               </Button>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+      >
+        <AlertDialogContent data-ocid="invoices.modal">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete Invoice #{deleteTarget?.invoiceNumber.toString()}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete Invoice #
+              {deleteTarget?.invoiceNumber.toString()}? This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setDeleteTarget(null)}
+              data-ocid="invoices.cancel_button"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              data-ocid="invoices.confirm_button"
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editState} onOpenChange={(o) => !o && setEditState(null)}>
+        <DialogContent className="max-w-md w-full" data-ocid="invoices.sheet">
+          <DialogHeader>
+            <DialogTitle>
+              Edit Invoice #{editState?.invoice.invoiceNumber.toString()}
+            </DialogTitle>
+          </DialogHeader>
+          {editState && (
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              {/* Customer Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Customer Name</Label>
+                  <Input
+                    value={editState.customerName}
+                    onChange={(e) =>
+                      setEditState((prev) =>
+                        prev ? { ...prev, customerName: e.target.value } : prev,
+                      )
+                    }
+                    placeholder="Walk-in"
+                    className="h-8 text-sm"
+                    data-ocid="invoices.input"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Customer GSTIN</Label>
+                  <Input
+                    value={editState.customerGstin}
+                    onChange={(e) =>
+                      setEditState((prev) =>
+                        prev
+                          ? { ...prev, customerGstin: e.target.value }
+                          : prev,
+                      )
+                    }
+                    placeholder="Optional"
+                    className="h-8 text-sm"
+                    data-ocid="invoices.textarea"
+                  />
+                </div>
+              </div>
+
+              {/* GST Type Toggle */}
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">GST Type</Label>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={editState.isIgst ? "default" : "outline"}
+                    onClick={() => toggleGstType(true)}
+                    className={
+                      editState.isIgst
+                        ? "bg-blue hover:bg-blue-dark text-white"
+                        : ""
+                    }
+                    data-ocid="invoices.toggle"
+                  >
+                    IGST (Inter-state)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={!editState.isIgst ? "default" : "outline"}
+                    onClick={() => toggleGstType(false)}
+                    className={
+                      !editState.isIgst
+                        ? "bg-teal hover:bg-teal-dark text-white"
+                        : ""
+                    }
+                  >
+                    CGST+SGST (Intra-state)
+                  </Button>
+                </div>
+              </div>
+
+              {/* Line Items */}
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Line Items</Label>
+                <div className="rounded-md border border-border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-xs py-2">Product</TableHead>
+                        <TableHead className="text-xs py-2 text-center">
+                          Qty
+                        </TableHead>
+                        <TableHead className="text-xs py-2 text-right">
+                          Rate
+                        </TableHead>
+                        <TableHead className="text-xs py-2 text-right">
+                          GST%
+                        </TableHead>
+                        <TableHead className="text-xs py-2 text-right">
+                          Total
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editState.lineItems.map((item, idx) => (
+                        <TableRow key={item.productId} className="text-sm">
+                          <TableCell className="py-2 text-xs">
+                            {item.productName}
+                          </TableCell>
+                          <TableCell className="py-2 text-center">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={Number(item.qty)}
+                              onChange={(e) =>
+                                updateQty(
+                                  idx,
+                                  Number.parseInt(e.target.value) || 1,
+                                )
+                              }
+                              className="h-7 w-16 text-center text-xs p-1"
+                            />
+                          </TableCell>
+                          <TableCell className="py-2 text-right text-xs">
+                            ₹{fmtNum(item.rate)}
+                          </TableCell>
+                          <TableCell className="py-2 text-right text-xs">
+                            {Number(item.gstRate)}%
+                          </TableCell>
+                          <TableCell className="py-2 text-right text-xs font-medium">
+                            ₹{fmtNum(item.lineTotal)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Grand Total */}
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <span className="text-sm font-semibold">Grand Total</span>
+                <span className="text-base font-bold text-teal">
+                  {fmt(grandTotal)}
+                </span>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => setEditState(null)}
+              className="sm:w-auto w-full"
+              data-ocid="invoices.close_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={updateMutation.isPending}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white sm:w-auto w-full"
+              data-ocid="invoices.submit_button"
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </motion.div>

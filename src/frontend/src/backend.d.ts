@@ -87,6 +87,7 @@ export interface backendInterface {
     addProduct(name: string, hsnCode: string, sku: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createInvoice(customerName: string, customerGstin: string, isIgst: boolean, lineItems: Array<LineItem>): Promise<Invoice>;
+    deleteInvoice(invoiceNumber: bigint): Promise<void>;
     deleteProduct(sku: string): Promise<void>;
     getAllStoresAdmin(): Promise<Array<AdminStoreView>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
@@ -102,6 +103,7 @@ export interface backendInterface {
     isCallerAdmin(): Promise<boolean>;
     registerStore(name: string, address: string, gstin: string, fssai: string, phone: string, state: string): Promise<StoreProfile>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    updateInvoice(invoiceNumber: bigint, customerName: string, customerGstin: string, isIgst: boolean, lineItems: Array<LineItem>): Promise<Invoice>;
     updateProduct(sku: string, name: string, hsnCode: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
     updateProductStock(productId: string, newQty: bigint): Promise<void>;
     updateStore(name: string, address: string, gstin: string, fssai: string, phone: string, state: string): Promise<StoreProfile>;

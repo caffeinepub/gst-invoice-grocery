@@ -311,6 +311,57 @@ actor {
     invoice;
   };
 
+  public shared ({ caller }) func deleteInvoice(invoiceNumber : Nat) : async () {
+    requireUser(caller);
+    switch (invoices.get(caller)) {
+      case (null) { Runtime.trap("Invoice not found for this store") };
+      case (?invs) {
+        if (not invs.containsKey(invoiceNumber)) {
+          Runtime.trap("Invoice not found for this store");
+        };
+        invs.remove(invoiceNumber);
+        invoices.add(caller, invs);
+      };
+    };
+  };
+
+  public shared ({ caller }) func updateInvoice(invoiceNumber : Nat, customerName : Text, customerGstin : Text, isIgst : Bool, lineItems : [LineItem]) : async Invoice {
+    requireUser(caller);
+    switch (invoices.get(caller)) {
+      case (null) { Runtime.trap("Invoice not found for this store") };
+      case (?invs) {
+        switch (invs.get(invoiceNumber)) {
+          case (null) { Runtime.trap("Invoice not found for this store") };
+          case (?existing) {
+            let subtotal = lineItems.foldLeft(0, func(acc, item) { acc + item.lineTotal });
+            let totalCgst = lineItems.foldLeft(0, func(acc, item) { acc + item.cgstAmt });
+            let totalSgst = lineItems.foldLeft(0, func(acc, item) { acc + item.sgstAmt });
+            let totalIgst = lineItems.foldLeft(0, func(acc, item) { acc + item.igstAmt });
+            let grandTotal = subtotal + totalCgst + totalSgst + totalIgst;
+            let updated : Invoice = {
+              storeId = existing.storeId;
+              invoiceNumber = existing.invoiceNumber;
+              date = existing.date;
+              customerName;
+              customerGstin;
+              isIgst;
+              lineItems;
+              subtotal;
+              totalCgst;
+              totalSgst;
+              totalIgst;
+              grandTotal;
+              createdAt = existing.createdAt;
+            };
+            invs.add(invoiceNumber, updated);
+            invoices.add(caller, invs);
+            updated;
+          };
+        };
+      };
+    };
+  };
+
   public shared ({ caller }) func updateProductStock(productId : Text, newQty : Nat) : async () {
     requireUser(caller);
     switch (products.get(caller)) {

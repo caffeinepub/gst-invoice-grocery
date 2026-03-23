@@ -19,11 +19,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Banknote,
+  CreditCard,
   Loader2,
   Plus,
   Printer,
   Save,
   ShoppingCart,
+  Smartphone,
   Trash2,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -67,6 +70,8 @@ function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
   };
 }
 
+type PaymentMode = "Cash" | "Card" | "UPI";
+
 export default function NewInvoice() {
   const { data: products = [] } = useGetProducts();
   const { data: store } = useGetStore();
@@ -78,6 +83,9 @@ export default function NewInvoice() {
   const [customerName, setCustomerName] = useState("");
   const [customerGstin, setCustomerGstin] = useState("");
   const [isIgst, setIsIgst] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>("Cash");
+
+  const logoUrl = localStorage.getItem("store_logo") ?? undefined;
 
   const addToCart = () => {
     if (!selectedSku) return;
@@ -166,12 +174,39 @@ export default function NewInvoice() {
       setCustomerName("");
       setCustomerGstin("");
       setIsIgst(false);
+      setPaymentMode("Cash");
     } catch {
       toast.error("Failed to save invoice. Please try again.");
     }
   };
 
   const fmt = (paise: bigint) => `₹${(Number(paise) / 100).toFixed(2)}`;
+
+  const paymentModes: {
+    mode: PaymentMode;
+    label: string;
+    icon: React.ReactNode;
+    activeClass: string;
+  }[] = [
+    {
+      mode: "Cash",
+      label: "Cash",
+      icon: <Banknote className="w-4 h-4" />,
+      activeClass: "bg-green-600 text-white border-green-600",
+    },
+    {
+      mode: "Card",
+      label: "Card",
+      icon: <CreditCard className="w-4 h-4" />,
+      activeClass: "bg-blue-600 text-white border-blue-600",
+    },
+    {
+      mode: "UPI",
+      label: "UPI",
+      icon: <Smartphone className="w-4 h-4" />,
+      activeClass: "bg-purple-600 text-white border-purple-600",
+    },
+  ];
 
   return (
     <div
@@ -233,6 +268,28 @@ export default function NewInvoice() {
                     ? "Customer is from a different state"
                     : "Customer is from the same state"}
                 </p>
+              </div>
+            </div>
+
+            {/* Payment Mode Selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Payment Mode</Label>
+              <div className="flex gap-2">
+                {paymentModes.map(({ mode, label, icon, activeClass }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaymentMode(mode)}
+                    data-ocid="invoice.toggle"
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all flex-1 justify-center ${
+                      paymentMode === mode
+                        ? activeClass
+                        : "bg-background text-muted-foreground border-border hover:border-primary"
+                    }`}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
               </div>
             </div>
           </CardContent>
@@ -432,6 +489,8 @@ export default function NewInvoice() {
                 totalSgst={totalSgst}
                 totalIgst={totalIgst}
                 grandTotal={grandTotal}
+                paymentMode={paymentMode}
+                logoUrl={logoUrl}
               />
             </div>
           </CardContent>

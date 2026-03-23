@@ -8,9 +8,18 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, Copy, Edit2, Loader2, Save, Store } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Edit2,
+  ImagePlus,
+  Loader2,
+  Save,
+  Store,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
@@ -62,6 +71,10 @@ export default function StoreSetup() {
   const updateMutation = useUpdateStore();
   const [editing, setEditing] = useState(false);
   const [principalCopied, setPrincipalCopied] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string>(
+    () => localStorage.getItem("store_logo") ?? "",
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     name: "",
     address: "",
@@ -110,6 +123,26 @@ export default function StoreSetup() {
     await navigator.clipboard.writeText(principal);
     setPrincipalCopied(true);
     setTimeout(() => setPrincipalCopied(false), 1800);
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      localStorage.setItem("store_logo", dataUrl);
+      setLogoUrl(dataUrl);
+      toast.success("Logo saved for invoice printing!");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    localStorage.removeItem("store_logo");
+    setLogoUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    toast.success("Logo removed.");
   };
 
   const isReadOnly = !!store && !editing;
@@ -257,6 +290,85 @@ export default function StoreSetup() {
                   ))}
                 </select>
               )}
+            </div>
+
+            {/* Store Logo Upload */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Store Logo{" "}
+                <span className="text-muted-foreground font-normal">
+                  (for invoice printing)
+                </span>
+              </Label>
+              {logoUrl ? (
+                <div className="flex items-center gap-4 p-3 rounded-lg border border-border bg-muted/30">
+                  <img
+                    src={logoUrl}
+                    alt="Store Logo Preview"
+                    className="max-h-20 max-w-[120px] object-contain rounded"
+                  />
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      Logo saved for invoices
+                    </p>
+                    {!isReadOnly && (
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          data-ocid="store.upload_button"
+                        >
+                          <ImagePlus className="w-3.5 h-3.5 mr-1" /> Change
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveLogo}
+                          className="text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
+                          data-ocid="store.delete_button"
+                        >
+                          <X className="w-3.5 h-3.5 mr-1" /> Remove
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isReadOnly}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`w-full flex items-center gap-3 p-4 rounded-lg border-2 border-dashed transition-colors text-left ${
+                    isReadOnly
+                      ? "border-border bg-muted/20 cursor-default opacity-70"
+                      : "border-border hover:border-saffron/50 cursor-pointer bg-muted/10"
+                  }`}
+                  data-ocid="store.dropzone"
+                >
+                  <ImagePlus className="w-8 h-8 text-muted-foreground flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {isReadOnly ? "No logo uploaded" : "Upload store logo"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {isReadOnly
+                        ? "Enable edit to upload a logo"
+                        : "PNG, JPG or SVG — shown on printed invoices"}
+                    </p>
+                  </div>
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+                disabled={isReadOnly}
+                className="hidden"
+              />
             </div>
 
             {(isNew || editing) && (

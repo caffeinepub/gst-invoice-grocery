@@ -233,6 +233,48 @@ export function useCreateInvoice() {
   });
 }
 
+export function useDeleteInvoice() {
+  const { actor } = useActor();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (invoiceNumber: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).deleteInvoice(invoiceNumber);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["storeSummary"] });
+    },
+  });
+}
+
+export function useUpdateInvoice() {
+  const { actor } = useActor();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      invoiceNumber: bigint;
+      customerName: string;
+      customerGstin: string;
+      isIgst: boolean;
+      lineItems: LineItem[];
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).updateInvoice(
+        data.invoiceNumber,
+        data.customerName,
+        data.customerGstin,
+        data.isIgst,
+        data.lineItems,
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["storeSummary"] });
+    },
+  });
+}
+
 export function useGetCallerProfile() {
   const { actor, isFetching } = useActor();
   return useQuery({

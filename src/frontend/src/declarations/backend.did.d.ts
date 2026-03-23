@@ -93,6 +93,7 @@ export interface _SERVICE {
     [string, string, boolean, Array<LineItem>],
     Invoice
   >,
+  'deleteInvoice' : ActorMethod<[bigint], undefined>,
   'deleteProduct' : ActorMethod<[string], undefined>,
   'getAllStoresAdmin' : ActorMethod<[], Array<AdminStoreView>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
@@ -111,6 +112,10 @@ export interface _SERVICE {
     StoreProfile
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'updateInvoice' : ActorMethod<
+    [bigint, string, string, boolean, Array<LineItem>],
+    Invoice
+  >,
   'updateProduct' : ActorMethod<
     [string, string, string, bigint, bigint, bigint],
     Product

@@ -15,6 +15,8 @@ interface Props {
   totalSgst: bigint;
   totalIgst: bigint;
   grandTotal: bigint;
+  logoUrl?: string;
+  paymentMode?: string;
 }
 
 export interface InvoiceLineItemDisplay {
@@ -92,8 +94,21 @@ export default function ThermalReceipt({
   totalSgst,
   totalIgst,
   grandTotal,
+  logoUrl,
+  paymentMode,
 }: Props) {
   const gstBreakdown = groupByGstRate(lineItems);
+  const dashedLine = "- - - - - - - - - - - - - - - - - - - -";
+  const solidLine = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
+  const paymentIcon =
+    paymentMode === "Cash"
+      ? "💵"
+      : paymentMode === "Card"
+        ? "💳"
+        : paymentMode === "UPI"
+          ? "📲"
+          : "";
 
   return (
     <div
@@ -102,40 +117,94 @@ export default function ThermalReceipt({
         width: "302px",
         fontFamily: "'Courier New', Courier, monospace",
         fontSize: "11px",
-        lineHeight: "1.4",
+        lineHeight: "1.5",
         color: "#000",
         background: "#fff",
-        padding: "8px",
+        padding: "8px 10px",
       }}
     >
       {/* Store Header */}
-      <div style={{ textAlign: "center", marginBottom: "6px" }}>
+      <div
+        style={{
+          textAlign: "center",
+          marginBottom: "6px",
+          paddingTop: "6px",
+          borderTop: "3px solid #000",
+        }}
+      >
+        {/* Store Logo */}
+        {logoUrl && (
+          <div style={{ marginBottom: "6px" }}>
+            <img
+              src={logoUrl}
+              alt="Store Logo"
+              style={{
+                maxHeight: "60px",
+                maxWidth: "100%",
+                objectFit: "contain",
+                display: "block",
+                margin: "0 auto",
+              }}
+            />
+          </div>
+        )}
         <div
           style={{
             fontWeight: "bold",
-            fontSize: "14px",
+            fontSize: "15px",
             textTransform: "uppercase",
+            letterSpacing: "2px",
           }}
         >
           {store?.name || "STORE NAME"}
         </div>
         {store?.address && (
-          <div style={{ fontSize: "10px", marginTop: "2px" }}>
+          <div
+            style={{ fontSize: "10px", marginTop: "3px", lineHeight: "1.4" }}
+          >
             {store.address}
           </div>
         )}
         {store?.phone && (
-          <div style={{ fontSize: "10px" }}>Ph: {store.phone}</div>
+          <div style={{ fontSize: "10px", marginTop: "1px" }}>
+            Ph: {store.phone}
+          </div>
         )}
         {store?.gstin && (
-          <div style={{ fontSize: "10px" }}>GSTIN: {store.gstin}</div>
+          <div
+            style={{ fontSize: "10px", marginTop: "1px", fontWeight: "600" }}
+          >
+            GSTIN: {store.gstin}
+          </div>
         )}
         {store?.fssai && (
-          <div style={{ fontSize: "10px" }}>FSSAI: {store.fssai}</div>
+          <div style={{ fontSize: "10px", marginTop: "1px" }}>
+            FSSAI: {store.fssai}
+          </div>
         )}
+        {/* Decorative line below header */}
+        <div
+          style={{ fontSize: "9px", marginTop: "5px", letterSpacing: "1px" }}
+        >
+          {dashedLine}
+        </div>
       </div>
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      {/* TAX INVOICE label */}
+      <div
+        style={{
+          textAlign: "center",
+          fontWeight: "bold",
+          fontSize: "12px",
+          letterSpacing: "3px",
+          padding: "3px 0",
+          borderTop: "1px solid #000",
+          borderBottom: "1px solid #000",
+          marginBottom: "5px",
+        }}
+      >
+        TAX INVOICE
+      </div>
 
       {/* Invoice Info */}
       <div
@@ -143,6 +212,7 @@ export default function ThermalReceipt({
           display: "flex",
           justifyContent: "space-between",
           fontSize: "10px",
+          marginBottom: "2px",
         }}
       >
         <span>Invoice #: {invoiceNumber.toString()}</span>
@@ -155,7 +225,7 @@ export default function ThermalReceipt({
         <div style={{ fontSize: "10px" }}>GSTIN: {customerGstin}</div>
       )}
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
 
       {/* Column Headers */}
       <div
@@ -164,6 +234,7 @@ export default function ThermalReceipt({
           justifyContent: "space-between",
           fontWeight: "bold",
           fontSize: "10px",
+          paddingBottom: "2px",
         }}
       >
         <span style={{ flex: 3 }}>Item</span>
@@ -188,8 +259,11 @@ export default function ThermalReceipt({
         </div>
       ) : (
         lineItems.map((item) => (
-          <div key={`${item.productName}-${item.hsnCode}`}>
-            <div style={{ fontSize: "10px", fontWeight: "500" }}>
+          <div
+            key={`${item.productName}-${item.hsnCode}`}
+            style={{ marginBottom: "3px" }}
+          >
+            <div style={{ fontSize: "10px", fontWeight: "600" }}>
               {item.productName}
             </div>
             <div
@@ -216,7 +290,7 @@ export default function ThermalReceipt({
         ))
       )}
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
 
       {/* Subtotal */}
       <div
@@ -271,7 +345,7 @@ export default function ThermalReceipt({
         </div>
       ))}
 
-      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
 
       {/* Total GST */}
       <div
@@ -285,7 +359,7 @@ export default function ThermalReceipt({
         <span>{fmt(isIgst ? totalIgst : totalCgst + totalSgst)}</span>
       </div>
 
-      <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "2px solid #000", margin: "5px 0" }} />
 
       {/* Grand Total */}
       <div
@@ -300,23 +374,55 @@ export default function ThermalReceipt({
         <span>{fmt(grandTotal)}</span>
       </div>
 
-      <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+      <div style={{ borderTop: "2px solid #000", margin: "5px 0" }} />
 
+      {/* Payment Mode */}
+      {paymentMode && (
+        <div
+          style={{
+            textAlign: "center",
+            margin: "5px 0",
+          }}
+        >
+          <div style={{ fontSize: "9px", letterSpacing: "1px", color: "#555" }}>
+            {solidLine}
+          </div>
+          <div
+            style={{
+              fontWeight: "bold",
+              fontSize: "12px",
+              padding: "4px 0",
+              letterSpacing: "1px",
+            }}
+          >
+            {paymentIcon} Payment Mode: {paymentMode.toUpperCase()} ✓
+          </div>
+          <div style={{ fontSize: "9px", letterSpacing: "1px", color: "#555" }}>
+            {solidLine}
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
       <div
         style={{
           textAlign: "center",
           fontSize: "10px",
-          marginTop: "6px",
-          color: "#555",
+          marginTop: "8px",
+          paddingTop: "6px",
+          borderTop: "1px dashed #000",
         }}
       >
-        Thank you for shopping with us!
-      </div>
-      {store?.state && (
-        <div style={{ textAlign: "center", fontSize: "9px", color: "#888" }}>
-          State: {store.state} | {isIgst ? "Inter-State" : "Intra-State"} Supply
+        <div style={{ fontWeight: "600" }}>Thanks for shopping with us!</div>
+        {store?.name && (
+          <div style={{ fontSize: "10px", marginTop: "2px" }}>
+            — {store.name}
+          </div>
+        )}
+        <div style={{ fontSize: "9px", color: "#888", marginTop: "4px" }}>
+          ** Thank You, Visit Again **
         </div>
-      )}
+      </div>
     </div>
   );
 }
