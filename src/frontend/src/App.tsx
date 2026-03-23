@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import {
   FileText,
+  HelpCircle,
   LayoutDashboard,
   LogIn,
   LogOut,
@@ -17,6 +18,7 @@ import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetMyCredits, useIsCallerAdmin } from "./hooks/useQueries";
 import AdminPanel from "./pages/AdminPanel";
 import Dashboard from "./pages/Dashboard";
+import HelpSupport from "./pages/HelpSupport";
 import InactiveAccount from "./pages/InactiveAccount";
 import Invoices from "./pages/Invoices";
 import NewInvoice from "./pages/NewInvoice";
@@ -29,12 +31,13 @@ const BASE_TABS = [
   { id: "products", label: "Products", icon: Package },
   { id: "invoice", label: "New Bill", icon: Receipt },
   { id: "invoices", label: "Invoices", icon: FileText },
+  { id: "help", label: "Help", icon: HelpCircle },
 ] as const;
 
 const ADMIN_TAB = { id: "admin", label: "Admin", icon: ShieldCheck } as const;
 
 type BaseTabId = (typeof BASE_TABS)[number]["id"];
-type TabId = BaseTabId | "admin";
+type TabId = BaseTabId | "admin" | "help";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
@@ -236,6 +239,7 @@ export default function App() {
               {activeTab === "invoice" && <NewInvoice />}
               {activeTab === "invoices" && <Invoices />}
               {activeTab === "admin" && <AdminPanel />}
+              {activeTab === "help" && <HelpSupport />}
             </motion.div>
           </AnimatePresence>
         )}
