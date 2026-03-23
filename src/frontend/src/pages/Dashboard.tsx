@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
-import { useActor } from "../hooks/useActor";
 import {
   useGetMyCredits,
   useGetStoreSummary,
@@ -44,10 +43,10 @@ interface Props {
 }
 
 export default function Dashboard({ onNavigate }: Props) {
-  const { isFetching: actorFetching, actorError } = useActor();
   const {
     data: summary,
     isLoading,
+    isFetching: actorFetching,
     error: summaryError,
   } = useGetStoreSummary();
   const { data: credits } = useGetMyCredits();
@@ -103,7 +102,7 @@ export default function Dashboard({ onNavigate }: Props) {
     String(summaryError).toLowerCase().includes("store not found");
 
   // Only treat as real error if it's NOT a "store not found" message
-  const hasError = actorError || (summaryError && !isStoreNotFound);
+  const hasError = summaryError && !isStoreNotFound;
 
   // Show no-store UI if the error says store not found, or if there's no summary and no other error
   const noStore =
@@ -130,12 +129,6 @@ export default function Dashboard({ onNavigate }: Props) {
         )}
 
         {/* Only show error boxes for real (unexpected) errors */}
-        {actorError && (
-          <ErrorBox
-            title="Connection Error (actor)"
-            message={String(actorError)}
-          />
-        )}
         {summaryError && !isStoreNotFound && (
           <ErrorBox
             title="Data Fetch Error (storeSummary)"

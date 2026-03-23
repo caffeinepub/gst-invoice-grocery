@@ -5,8 +5,7 @@ import { createActorWithConfig } from "../config";
 import { getSecretParameter } from "../utils/urlParams";
 import { useInternetIdentity } from "./useInternetIdentity";
 
-export const ACTOR_QUERY_KEY = "actor";
-
+const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
@@ -16,6 +15,7 @@ export function useActor() {
       const isAuthenticated = !!identity;
 
       if (!isAuthenticated) {
+        // Return anonymous actor if not authenticated
         return await createActorWithConfig();
       }
 
@@ -26,18 +26,17 @@ export function useActor() {
       };
 
       const actor = await createActorWithConfig(actorOptions);
-      try {
-        const adminToken = getSecretParameter("caffeineAdminToken") || "";
-        await actor._initializeAccessControlWithSecret(adminToken);
-      } catch {
-        // ignore -- actor still usable without admin token
-      }
+      const adminToken = getSecretParameter("caffeineAdminToken") || "";
+      await actor._initializeAccessControlWithSecret(adminToken);
       return actor;
     },
+    // Only refetch when identity changes
     staleTime: Number.POSITIVE_INFINITY,
+    // This will cause the actor to be recreated when the identity changes
     enabled: true,
   });
 
+  // When the actor changes, invalidate dependent queries
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
@@ -53,14 +52,8 @@ export function useActor() {
     }
   }, [actorQuery.data, queryClient]);
 
-  const refetchActor = async () => {
-    await actorQuery.refetch();
-  };
-
   return {
     actor: actorQuery.data || null,
     isFetching: actorQuery.isFetching,
-    actorError: actorQuery.error,
-    refetchActor,
   };
 }

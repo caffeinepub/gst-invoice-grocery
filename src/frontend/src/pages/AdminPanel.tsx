@@ -26,9 +26,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useActor } from "../hooks/useActor";
 import {
   useAddCreditsAdmin,
   useGetAllStoresAdmin,
@@ -248,7 +247,6 @@ function ActivateNewAccount() {
 }
 
 export default function AdminPanel() {
-  const { isFetching: actorFetching, actorError } = useActor();
   const { data: isAdmin, isLoading: isAdminLoading } = useIsCallerAdmin();
   const {
     data: stores = [],
@@ -257,8 +255,23 @@ export default function AdminPanel() {
   } = useGetAllStoresAdmin();
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshAllData = useRefreshAllData();
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleSearchInput = () => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setSearchQuery(searchInputRef.current?.value ?? "");
+    }, 300);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -280,7 +293,8 @@ export default function AdminPanel() {
     );
   });
 
-  if (actorFetching || isAdminLoading) {
+  // Only show full-page skeleton on the very first load (no cached data yet)
+  if (isAdminLoading) {
     return (
       <div className="space-y-4" data-ocid="admin.loading_state">
         {[1, 2, 3].map((i) => (
@@ -312,12 +326,7 @@ export default function AdminPanel() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
-      data-ocid="admin.section"
-    >
+    <div className="space-y-6" data-ocid="admin.section">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo flex items-center justify-center shadow">
@@ -355,23 +364,19 @@ export default function AdminPanel() {
 
       {/* Search Bar */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <input
+          ref={searchInputRef}
+          type="text"
+          autoComplete="off"
           placeholder="Search by store name, phone, address, or GSTIN..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9 h-10"
+          onInput={handleSearchInput}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           data-ocid="admin.search_input"
         />
       </div>
 
-      {/* Visible error boxes for mobile debugging */}
-      {actorError && (
-        <ErrorBox
-          title="Connection Error (actor)"
-          message={String(actorError)}
-        />
-      )}
+      {/* Visible error box for debugging */}
       {storesError && (
         <ErrorBox
           title="Data Fetch Error (getAllStoresAdmin)"
@@ -380,7 +385,7 @@ export default function AdminPanel() {
       )}
 
       {/* Store List */}
-      {storesLoading ? (
+      {storesLoading && stores.length === 0 ? (
         <div className="space-y-3" data-ocid="admin.loading_state">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />
@@ -604,6 +609,6 @@ export default function AdminPanel() {
           </div>
         </>
       )}
-    </motion.div>
+    </div>
   );
 }

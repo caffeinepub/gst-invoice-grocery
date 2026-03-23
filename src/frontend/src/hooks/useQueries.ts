@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LineItem, UserProfile } from "../backend.d";
-import { ACTOR_QUERY_KEY, useActor } from "./useActor";
+import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 const FIXED_ADMIN_PRINCIPALS = [
@@ -8,7 +8,7 @@ const FIXED_ADMIN_PRINCIPALS = [
 ];
 
 const DATA_QUERY_DEFAULTS = {
-  staleTime: 0,
+  staleTime: 30000,
   refetchOnMount: "always" as const,
   refetchOnWindowFocus: false,
   retry: 3,
@@ -326,19 +326,9 @@ export function useAddCreditsAdmin() {
 
 export function useRefreshAllData() {
   const qc = useQueryClient();
-  const { refetchActor } = useActor();
 
   return async () => {
-    try {
-      await refetchActor();
-    } catch (_e) {
-      // ignore
-    }
-    await qc.invalidateQueries({
-      predicate: (q) => !q.queryKey.includes(ACTOR_QUERY_KEY),
-    });
-    await qc.refetchQueries({
-      predicate: (q) => !q.queryKey.includes(ACTOR_QUERY_KEY),
-    });
+    await qc.invalidateQueries();
+    await qc.refetchQueries();
   };
 }

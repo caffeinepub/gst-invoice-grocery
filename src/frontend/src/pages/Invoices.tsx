@@ -19,7 +19,6 @@ import {
 import { Download, Eye, Loader2, Printer, Receipt } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import type { Invoice } from "../backend.d";
 import ThermalReceipt, { invoiceToDisplay } from "../components/ThermalReceipt";
 import { useGetInvoices, useGetStore } from "../hooks/useQueries";
@@ -30,6 +29,32 @@ const fmt = (paise: bigint) =>
   );
 
 const fmtNum = (paise: bigint) => (Number(paise) / 100).toFixed(2);
+
+/** Simple CSV export (no external lib needed) */
+function exportToCsv(
+  filename: string,
+  rows: Record<string, string | number>[],
+) {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const escapeCsv = (v: string | number) => {
+    const s = String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const csv = [
+    headers.map(escapeCsv).join(","),
+    ...rows.map((r) => headers.map((h) => escapeCsv(r[h] ?? "")).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Invoices() {
   const { data: invoices = [], isLoading } = useGetInvoices();
@@ -53,13 +78,10 @@ export default function Invoices() {
     return list;
   }, [invoices, dateFrom, dateTo]);
 
-  const handleExportExcel = () => {
+  const handleExportCsv = () => {
     if (filtered.length === 0) return;
 
-    const storeName = store?.name || "Store";
-    const storeGstin = store?.gstin || "";
-
-    const summaryData = filtered.map((inv, i) => ({
+    const summaryRows = filtered.map((inv, i) => ({
       "#": i + 1,
       "Invoice No": `#${inv.invoiceNumber.toString()}`,
       Date: new Date(Number(inv.date) / 1_000_000).toLocaleDateString("en-IN"),
@@ -74,10 +96,15 @@ export default function Invoices() {
       "Grand Total (Rs)": fmtNum(inv.grandTotal),
     }));
 
-    const detailData: object[] = [];
+    const fromStr = dateFrom || "all";
+    const toStr = dateTo || "all";
+    exportToCsv(`invoices_${fromStr}_to_${toStr}.csv`, summaryRows);
+
+    // Also export line items
+    const lineRows: Record<string, string | number>[] = [];
     for (const inv of filtered) {
       for (const item of inv.lineItems) {
-        detailData.push({
+        lineRows.push({
           "Invoice No": `#${inv.invoiceNumber.toString()}`,
           Date: new Date(Number(inv.date) / 1_000_000).toLocaleDateString(
             "en-IN",
@@ -95,27 +122,9 @@ export default function Invoices() {
         });
       }
     }
-
-    const wb = XLSX.utils.book_new();
-
-    const infoRows = [
-      ["Store Name", storeName],
-      ["GSTIN", storeGstin],
-      ["Report Date", new Date().toLocaleDateString("en-IN")],
-      ["Period", `${dateFrom || "All"} to ${dateTo || "All"}`],
-      [],
-    ];
-
-    const summaryWs = XLSX.utils.aoa_to_sheet(infoRows);
-    XLSX.utils.sheet_add_json(summaryWs, summaryData, { origin: -1 });
-    XLSX.utils.book_append_sheet(wb, summaryWs, "Invoice Summary");
-
-    const detailWs = XLSX.utils.json_to_sheet(detailData);
-    XLSX.utils.book_append_sheet(wb, detailWs, "Line Items");
-
-    const fromStr = dateFrom || "all";
-    const toStr = dateTo || "all";
-    XLSX.writeFile(wb, `invoices_${fromStr}_to_${toStr}.xlsx`);
+    if (lineRows.length > 0) {
+      exportToCsv(`invoice_items_${fromStr}_to_${toStr}.csv`, lineRows);
+    }
   };
 
   return (
@@ -137,12 +146,12 @@ export default function Invoices() {
               </Badge>
               <Button
                 size="sm"
-                onClick={handleExportExcel}
+                onClick={handleExportCsv}
                 disabled={filtered.length === 0}
                 className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 text-xs font-semibold"
                 data-ocid="invoices.export_button"
               >
-                <Download className="w-3.5 h-3.5 mr-1" /> Export Excel
+                <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
               </Button>
             </div>
           </div>
