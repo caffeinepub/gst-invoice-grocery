@@ -26,20 +26,17 @@ export function useActor() {
       };
 
       const actor = await createActorWithConfig(actorOptions);
-
-      // Wrap in try-catch so a failure here never blocks data fetching
+      // Attempt access control init but never let it block actor creation
       try {
         const adminToken = getSecretParameter("caffeineAdminToken") || "";
         await actor._initializeAccessControlWithSecret(adminToken);
       } catch {
-        // Initialization can fail silently in live environments -- actor is still usable
+        // Ignore -- access control init failure must not prevent data loading
       }
-
       return actor;
     },
     // Only refetch when identity changes
     staleTime: Number.POSITIVE_INFINITY,
-    retry: 2,
     enabled: true,
   });
 
