@@ -1,0 +1,322 @@
+import type { Invoice, StoreProfile } from "../backend.d";
+
+const fmt = (paise: bigint) => `₹${(Number(paise) / 100).toFixed(2)}`;
+
+interface Props {
+  store: StoreProfile | null;
+  invoiceNumber: bigint | string;
+  date: Date;
+  customerName?: string;
+  customerGstin?: string;
+  isIgst: boolean;
+  lineItems: InvoiceLineItemDisplay[];
+  subtotal: bigint;
+  totalCgst: bigint;
+  totalSgst: bigint;
+  totalIgst: bigint;
+  grandTotal: bigint;
+}
+
+export interface InvoiceLineItemDisplay {
+  productName: string;
+  hsnCode: string;
+  qty: bigint;
+  rate: bigint;
+  gstRate: bigint;
+  lineTotal: bigint;
+  cgstAmt: bigint;
+  sgstAmt: bigint;
+  igstAmt: bigint;
+}
+
+export function invoiceToDisplay(inv: Invoice): Omit<Props, "store"> {
+  return {
+    invoiceNumber: inv.invoiceNumber,
+    date: new Date(Number(inv.date) / 1_000_000),
+    customerName: inv.customerName || undefined,
+    customerGstin: inv.customerGstin || undefined,
+    isIgst: inv.isIgst,
+    lineItems: inv.lineItems.map((li) => ({
+      productName: li.productName,
+      hsnCode: li.hsnCode,
+      qty: li.qty,
+      rate: li.rate,
+      gstRate: li.gstRate,
+      lineTotal: li.lineTotal,
+      cgstAmt: li.cgstAmt,
+      sgstAmt: li.sgstAmt,
+      igstAmt: li.igstAmt,
+    })),
+    subtotal: inv.subtotal,
+    totalCgst: inv.totalCgst,
+    totalSgst: inv.totalSgst,
+    totalIgst: inv.totalIgst,
+    grandTotal: inv.grandTotal,
+  };
+}
+
+function groupByGstRate(items: InvoiceLineItemDisplay[]) {
+  const map = new Map<
+    number,
+    { taxable: bigint; cgst: bigint; sgst: bigint; igst: bigint }
+  >();
+  for (const item of items) {
+    const rate = Number(item.gstRate);
+    const taxable = item.qty * item.rate;
+    const existing = map.get(rate) || {
+      taxable: 0n,
+      cgst: 0n,
+      sgst: 0n,
+      igst: 0n,
+    };
+    map.set(rate, {
+      taxable: existing.taxable + taxable,
+      cgst: existing.cgst + item.cgstAmt,
+      sgst: existing.sgst + item.sgstAmt,
+      igst: existing.igst + item.igstAmt,
+    });
+  }
+  return map;
+}
+
+export default function ThermalReceipt({
+  store,
+  invoiceNumber,
+  date,
+  customerName,
+  customerGstin,
+  isIgst,
+  lineItems,
+  subtotal,
+  totalCgst,
+  totalSgst,
+  totalIgst,
+  grandTotal,
+}: Props) {
+  const gstBreakdown = groupByGstRate(lineItems);
+
+  return (
+    <div
+      id="thermal-receipt"
+      style={{
+        width: "302px",
+        fontFamily: "'Courier New', Courier, monospace",
+        fontSize: "11px",
+        lineHeight: "1.4",
+        color: "#000",
+        background: "#fff",
+        padding: "8px",
+      }}
+    >
+      {/* Store Header */}
+      <div style={{ textAlign: "center", marginBottom: "6px" }}>
+        <div
+          style={{
+            fontWeight: "bold",
+            fontSize: "14px",
+            textTransform: "uppercase",
+          }}
+        >
+          {store?.name || "STORE NAME"}
+        </div>
+        {store?.address && (
+          <div style={{ fontSize: "10px", marginTop: "2px" }}>
+            {store.address}
+          </div>
+        )}
+        {store?.phone && (
+          <div style={{ fontSize: "10px" }}>Ph: {store.phone}</div>
+        )}
+        {store?.gstin && (
+          <div style={{ fontSize: "10px" }}>GSTIN: {store.gstin}</div>
+        )}
+        {store?.fssai && (
+          <div style={{ fontSize: "10px" }}>FSSAI: {store.fssai}</div>
+        )}
+      </div>
+
+      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+
+      {/* Invoice Info */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: "10px",
+        }}
+      >
+        <span>Invoice #: {invoiceNumber.toString()}</span>
+        <span>{date.toLocaleDateString("en-IN")}</span>
+      </div>
+      {customerName && (
+        <div style={{ fontSize: "10px" }}>Customer: {customerName}</div>
+      )}
+      {customerGstin && (
+        <div style={{ fontSize: "10px" }}>GSTIN: {customerGstin}</div>
+      )}
+
+      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+
+      {/* Column Headers */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontWeight: "bold",
+          fontSize: "10px",
+        }}
+      >
+        <span style={{ flex: 3 }}>Item</span>
+        <span style={{ flex: 1, textAlign: "right" }}>Qty</span>
+        <span style={{ flex: 1, textAlign: "right" }}>Rate</span>
+        <span style={{ flex: 1, textAlign: "right" }}>Amt</span>
+      </div>
+
+      <div style={{ borderTop: "1px solid #000", margin: "2px 0" }} />
+
+      {/* Line Items */}
+      {lineItems.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            color: "#666",
+            padding: "8px 0",
+            fontSize: "10px",
+          }}
+        >
+          No items added
+        </div>
+      ) : (
+        lineItems.map((item) => (
+          <div key={`${item.productName}-${item.hsnCode}`}>
+            <div style={{ fontSize: "10px", fontWeight: "500" }}>
+              {item.productName}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "10px",
+              }}
+            >
+              <span style={{ flex: 3, color: "#555" }}>
+                HSN:{item.hsnCode} GST:{item.gstRate.toString()}%
+              </span>
+              <span style={{ flex: 1, textAlign: "right" }}>
+                {item.qty.toString()}
+              </span>
+              <span style={{ flex: 1, textAlign: "right" }}>
+                {fmt(item.rate)}
+              </span>
+              <span style={{ flex: 1, textAlign: "right" }}>
+                {fmt(item.qty * item.rate)}
+              </span>
+            </div>
+          </div>
+        ))
+      )}
+
+      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+
+      {/* Subtotal */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: "10px",
+        }}
+      >
+        <span>Subtotal (Taxable)</span>
+        <span>{fmt(subtotal)}</span>
+      </div>
+
+      {/* GST Breakdown */}
+      {Array.from(gstBreakdown.entries()).map(([rate, vals]) => (
+        <div key={rate}>
+          {isIgst ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontSize: "10px",
+              }}
+            >
+              <span>IGST @{rate}%</span>
+              <span>{fmt(vals.igst)}</span>
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
+                <span>CGST @{rate / 2}%</span>
+                <span>{fmt(vals.cgst)}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
+                <span>SGST @{rate / 2}%</span>
+                <span>{fmt(vals.sgst)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+
+      <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+
+      {/* Total GST */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: "11px",
+        }}
+      >
+        <span>Total GST</span>
+        <span>{fmt(isIgst ? totalIgst : totalCgst + totalSgst)}</span>
+      </div>
+
+      <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+
+      {/* Grand Total */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontWeight: "bold",
+          fontSize: "14px",
+        }}
+      >
+        <span>GRAND TOTAL</span>
+        <span>{fmt(grandTotal)}</span>
+      </div>
+
+      <div style={{ borderTop: "2px solid #000", margin: "4px 0" }} />
+
+      <div
+        style={{
+          textAlign: "center",
+          fontSize: "10px",
+          marginTop: "6px",
+          color: "#555",
+        }}
+      >
+        Thank you for shopping with us!
+      </div>
+      {store?.state && (
+        <div style={{ textAlign: "center", fontSize: "9px", color: "#888" }}>
+          State: {store.state} | {isIgst ? "Inter-State" : "Intra-State"} Supply
+        </div>
+      )}
+    </div>
+  );
+}

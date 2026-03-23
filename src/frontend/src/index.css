@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url("/assets/fonts/Figtree.woff2") format("woff2");
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* Warm cream background */
+    --background: 0.978 0.008 80;
+    /* Pure white card */
+    --card: 1 0 0;
+    --card-foreground: 0.22 0.025 50;
+    --popover: 1 0 0;
+    --popover-foreground: 0.22 0.025 50;
+
+    /* Saffron/Orange Primary */
+    --primary: 0.72 0.18 50;
+    --primary-foreground: 1 0 0;
+
+    /* Deep Indigo Secondary */
+    --secondary: 0.45 0.22 275;
+    --secondary-foreground: 1 0 0;
+
+    --muted: 0.96 0.01 70;
+    --muted-foreground: 0.52 0.02 60;
+
+    /* Light saffron accent */
+    --accent: 0.96 0.05 60;
+    --accent-foreground: 0.58 0.18 50;
+
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 1 0 0;
+
+    --border: 0.92 0.015 70;
+    --input: 0.88 0.012 70;
+    --ring: 0.72 0.18 50;
+    --foreground: 0.22 0.025 50;
+
+    /* Chart colors */
+    --chart-1: 0.72 0.18 50;
+    --chart-2: 0.45 0.22 275;
+    --chart-3: 0.65 0.2 35;
+    --chart-4: 0.55 0.18 295;
+    --chart-5: 0.6 0.19 20;
+
+    --sidebar: 1 0 0;
+    --sidebar-foreground: 0.22 0.025 50;
+    --sidebar-primary: 0.72 0.18 50;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.96 0.05 60;
+    --sidebar-accent-foreground: 0.58 0.18 50;
+    --sidebar-border: 0.92 0.015 70;
+    --sidebar-ring: 0.72 0.18 50;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Figtree", system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  }
+}
+
+/* Thermal receipt print styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-receipt,
+  #thermal-receipt * {
+    visibility: visible;
+  }
+  #thermal-receipt {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 302px;
+    padding: 8px;
+    background: white;
+    color: black;
+  }
+}
+
+/* Safe area for bottom nav on iOS */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
