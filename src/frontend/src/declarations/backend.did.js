@@ -55,6 +55,11 @@ export const AdminStoreView = IDL.Record({
   'credits' : IDL.Nat,
   'owner' : IDL.Principal,
   'storeName' : IDL.Text,
+  'phone' : IDL.Text,
+  'address' : IDL.Text,
+  'gstin' : IDL.Text,
+  'fssai' : IDL.Text,
+  'state' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 export const StoreProfile = IDL.Record({
@@ -177,6 +182,11 @@ export const idlFactory = ({ IDL }) => {
     'credits' : IDL.Nat,
     'owner' : IDL.Principal,
     'storeName' : IDL.Text,
+    'phone' : IDL.Text,
+    'address' : IDL.Text,
+    'gstin' : IDL.Text,
+    'fssai' : IDL.Text,
+    'state' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
   const StoreProfile = IDL.Record({

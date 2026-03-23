@@ -14,6 +14,11 @@ export interface AdminStoreView {
   'credits' : bigint,
   'owner' : Principal,
   'storeName' : string,
+  'phone' : string,
+  'address' : string,
+  'gstin' : string,
+  'fssai' : string,
+  'state' : string,
 }
 export interface Invoice {
   'customerName' : string,
