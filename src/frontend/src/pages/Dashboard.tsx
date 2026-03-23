@@ -27,10 +27,7 @@ import {
   useRefreshAllData,
 } from "../hooks/useQueries";
 
-const fmt = (paise: bigint) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
-    Number(paise) / 100,
-  );
+const fmt = (paise: bigint) => `₹${(Number(paise) / 100).toFixed(2)}`;
 
 function ErrorBox({ title, message }: { title: string; message: string }) {
   return (

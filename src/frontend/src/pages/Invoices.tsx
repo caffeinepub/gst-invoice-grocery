@@ -48,10 +48,7 @@ import {
   useUpdateInvoice,
 } from "../hooks/useQueries";
 
-const fmt = (paise: bigint) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
-    Number(paise) / 100,
-  );
+const fmt = (paise: bigint) => `₹${(Number(paise) / 100).toFixed(2)}`;
 
 const fmtNum = (paise: bigint) => (Number(paise) / 100).toFixed(2);
 
@@ -179,8 +176,16 @@ export default function Invoices() {
 
   async function handleDelete() {
     if (!deleteTarget) return;
-    await deleteMutation.mutateAsync(deleteTarget.invoiceNumber);
+    const invoiceNumber = deleteTarget.invoiceNumber;
     setDeleteTarget(null);
+    try {
+      await deleteMutation.mutateAsync(invoiceNumber);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert(
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   const handleExportCsv = () => {
