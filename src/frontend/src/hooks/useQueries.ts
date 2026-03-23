@@ -239,7 +239,7 @@ export function useDeleteInvoice() {
   return useMutation({
     mutationFn: async (invoiceNumber: bigint) => {
       if (!actor) throw new Error("Not connected");
-      return (actor as any).deleteInvoice(invoiceNumber);
+      return actor.deleteInvoice(invoiceNumber);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
@@ -260,7 +260,7 @@ export function useUpdateInvoice() {
       lineItems: LineItem[];
     }) => {
       if (!actor) throw new Error("Not connected");
-      return (actor as any).updateInvoice(
+      return actor.updateInvoice(
         data.invoiceNumber,
         data.customerName,
         data.customerGstin,

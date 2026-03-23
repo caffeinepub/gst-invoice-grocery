@@ -284,55 +284,62 @@ export default function NewInvoice() {
             </div>
 
             {/* Receipt sliding up from bottom - centered */}
-            <motion.div
-              initial={{ y: "100vh" }}
-              animate={{ y: "-10vh" }}
-              transition={{ duration: 5, ease: [0.2, 0, 0.4, 1] }}
+            <div
               style={{
-                position: "absolute",
+                position: "fixed",
+                left: 0,
+                right: 0,
                 bottom: 0,
-                left: "50%",
-                translateX: "-50%",
-                marginLeft: "-151px",
-                zIndex: 105,
                 display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 104,
               }}
             >
-              {/* Paper slot indicator at top */}
-              <div
+              <motion.div
+                initial={{ y: "100vh" }}
+                animate={{ y: "-30vh" }}
+                transition={{ duration: 5, ease: [0.2, 0, 0.4, 1] }}
                 style={{
-                  width: 302,
-                  height: 8,
-                  background: "#1f2937",
-                  borderRadius: "4px 4px 0 0",
+                  zIndex: 105,
                   display: "flex",
-                  justifyContent: "center",
+                  flexDirection: "column",
                   alignItems: "center",
                 }}
               >
+                {/* Paper slot indicator at top */}
                 <div
                   style={{
-                    width: 200,
-                    height: 3,
-                    background: "#374151",
-                    borderRadius: 2,
+                    width: 302,
+                    height: 8,
+                    background: "#1f2937",
+                    borderRadius: "4px 4px 0 0",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
                   }}
-                />
-              </div>
-              {/* Receipt paper */}
-              <div
-                style={{
-                  background: "white",
-                  padding: "8px",
-                  boxShadow: "0 4px 32px rgba(0,0,0,0.5)",
-                  width: 302,
-                }}
-              >
-                <ThermalReceipt {...receiptProps} />
-              </div>
-            </motion.div>
+                >
+                  <div
+                    style={{
+                      width: 200,
+                      height: 3,
+                      background: "#374151",
+                      borderRadius: 2,
+                    }}
+                  />
+                </div>
+                {/* Receipt paper */}
+                <div
+                  style={{
+                    background: "white",
+                    padding: "8px",
+                    boxShadow: "0 4px 32px rgba(0,0,0,0.5)",
+                    width: 302,
+                  }}
+                >
+                  <ThermalReceipt {...receiptProps} />
+                </div>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

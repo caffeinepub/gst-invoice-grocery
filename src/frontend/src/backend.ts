@@ -188,6 +188,8 @@ export interface backendInterface {
     updateProduct(sku: string, name: string, hsnCode: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
     updateProductStock(productId: string, newQty: bigint): Promise<void>;
     updateStore(name: string, address: string, gstin: string, fssai: string, phone: string, state: string): Promise<StoreProfile>;
+    deleteInvoice(invoiceNumber: bigint): Promise<void>;
+    updateInvoice(invoiceNumber: bigint, customerName: string, customerGstin: string, isIgst: boolean, lineItems: Array<LineItem>): Promise<Invoice>;
 }
 import type { UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -511,6 +513,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.updateStore(arg0, arg1, arg2, arg3, arg4, arg5);
+            return result;
+        }
+    }
+    async deleteInvoice(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteInvoice(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteInvoice(arg0);
+            return result;
+        }
+    }
+    async updateInvoice(arg0: bigint, arg1: string, arg2: string, arg3: boolean, arg4: Array<LineItem>): Promise<Invoice> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateInvoice(arg0, arg1, arg2, arg3, arg4);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateInvoice(arg0, arg1, arg2, arg3, arg4);
             return result;
         }
     }
