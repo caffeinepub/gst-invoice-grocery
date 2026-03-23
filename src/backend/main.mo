@@ -16,10 +16,13 @@ actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
+  // Preserved from previous version for stable variable compatibility
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("t7rbm-oz7cl-o4eaq-noqjj-f3x5g-b7uya-tdqqb-xiqpw-ujqal-6ycnj-2qe");
+  // Second admin principal
+  let ADMIN_PRINCIPAL_2 : Principal = Principal.fromText("ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe");
 
   func isAdminCaller(caller : Principal) : Bool {
-    caller == ADMIN_PRINCIPAL or AccessControl.isAdmin(accessControlState, caller);
+    caller == ADMIN_PRINCIPAL or caller == ADMIN_PRINCIPAL_2 or AccessControl.isAdmin(accessControlState, caller);
   };
 
   func requireUser(caller : Principal) {

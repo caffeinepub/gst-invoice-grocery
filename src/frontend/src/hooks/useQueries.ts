@@ -3,8 +3,10 @@ import type { LineItem, UserProfile } from "../backend.d";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
-const FIXED_ADMIN_PRINCIPAL =
-  "t7rbm-oz7cl-o4eaq-noqjj-f3x5g-b7uya-tdqqb-xiqpw-ujqal-6ycnj-2qe";
+const FIXED_ADMIN_PRINCIPALS = [
+  "t7rbm-oz7cl-o4eaq-noqjj-f3x5g-b7uya-tdqqb-xiqpw-ujqal-6ycnj-2qe",
+  "ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe",
+];
 
 export function useGetStore() {
   const { actor, isFetching } = useActor();
@@ -258,8 +260,8 @@ export function useIsCallerAdmin() {
   return useQuery({
     queryKey: ["isCallerAdmin", principal],
     queryFn: async (): Promise<boolean> => {
-      // Always grant admin to the fixed hardcoded principal
-      if (principal === FIXED_ADMIN_PRINCIPAL) return true;
+      // Grant admin to all fixed hardcoded principals
+      if (FIXED_ADMIN_PRINCIPALS.includes(principal)) return true;
       if (!actor) return false;
       try {
         return await actor.isCallerAdmin();
