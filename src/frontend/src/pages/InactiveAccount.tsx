@@ -59,12 +59,12 @@ export default function InactiveAccount({
         <p className="text-sm text-orange-800">
           WhatsApp:{" "}
           <a
-            href="https://wa.me/917023275769"
+            href="https://wa.me/917023285769"
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold underline"
           >
-            +91 7023275769
+            +91 7023285769
           </a>
         </p>
       </div>

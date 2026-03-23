@@ -20,13 +20,8 @@ export function useGetStore() {
   return useQuery({
     queryKey: ["store"],
     queryFn: async () => {
-      if (!actor) return null;
-      try {
-        return await actor.getStore();
-      } catch (e) {
-        console.error("getStore error:", e);
-        return null;
-      }
+      if (!actor) throw new Error("Actor not ready");
+      return await actor.getStore();
     },
     enabled: !!actor && !isFetching,
     ...DATA_QUERY_DEFAULTS,
@@ -38,13 +33,9 @@ export function useGetStoreSummary() {
   return useQuery({
     queryKey: ["storeSummary"],
     queryFn: async () => {
-      if (!actor) return null;
-      try {
-        return await actor.getStoreSummary();
-      } catch (e) {
-        console.error("getStoreSummary error:", e);
-        return null;
-      }
+      if (!actor) throw new Error("Actor not ready");
+      const result = await actor.getStoreSummary();
+      return result;
     },
     enabled: !!actor && !isFetching,
     ...DATA_QUERY_DEFAULTS,
@@ -56,13 +47,8 @@ export function useGetProducts() {
   return useQuery({
     queryKey: ["products"],
     queryFn: async () => {
-      if (!actor) return [];
-      try {
-        return await actor.getProducts();
-      } catch (e) {
-        console.error("getProducts error:", e);
-        return [];
-      }
+      if (!actor) throw new Error("Actor not ready");
+      return await actor.getProducts();
     },
     enabled: !!actor && !isFetching,
     ...DATA_QUERY_DEFAULTS,
@@ -74,13 +60,8 @@ export function useGetInvoices() {
   return useQuery({
     queryKey: ["invoices"],
     queryFn: async () => {
-      if (!actor) return [];
-      try {
-        return await actor.getInvoices();
-      } catch (e) {
-        console.error("getInvoices error:", e);
-        return [];
-      }
+      if (!actor) throw new Error("Actor not ready");
+      return await actor.getInvoices();
     },
     enabled: !!actor && !isFetching,
     ...DATA_QUERY_DEFAULTS,
@@ -315,13 +296,8 @@ export function useGetAllStoresAdmin() {
   return useQuery({
     queryKey: ["allStoresAdmin", principal],
     queryFn: async () => {
-      if (!actor) return [];
-      try {
-        return await actor.getAllStoresAdmin();
-      } catch (e) {
-        console.error("getAllStoresAdmin error:", e);
-        return [];
-      }
+      if (!actor) throw new Error("Actor not ready");
+      return await actor.getAllStoresAdmin();
     },
     enabled: !!actor && !isFetching && !!principal,
     ...DATA_QUERY_DEFAULTS,

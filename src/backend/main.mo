@@ -118,6 +118,11 @@ actor {
     owner : Principal;
     storeName : Text;
     credits : Nat;
+    phone : Text;
+    address : Text;
+    gstin : Text;
+    fssai : Text;
+    state : Text;
   };
 
   let stores = Map.empty<Principal, StoreProfile>();
@@ -420,6 +425,11 @@ actor {
           owner = principal;
           storeName = storeProfile.name;
           credits = storeCredits;
+          phone = storeProfile.phone;
+          address = storeProfile.address;
+          gstin = storeProfile.gstin;
+          fssai = storeProfile.fssai;
+          state = storeProfile.state;
         };
         results.add(storeView);
       }

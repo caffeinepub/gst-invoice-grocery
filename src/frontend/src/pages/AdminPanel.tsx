@@ -11,7 +11,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Check, Copy, Plus, RefreshCw, ShieldCheck, Store } from "lucide-react";
+import { Principal } from "@dfinity/principal";
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  MapPin,
+  Phone,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Store,
+  UserPlus,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -22,6 +35,20 @@ import {
   useIsCallerAdmin,
   useRefreshAllData,
 } from "../hooks/useQueries";
+
+function ErrorBox({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="rounded-xl border border-red-300 bg-red-50 p-4 flex gap-3 items-start">
+      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+      <div>
+        <div className="font-semibold text-red-700 text-sm">{title}</div>
+        <div className="text-red-600 text-xs mt-1 font-mono break-all">
+          {message}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -127,12 +154,109 @@ function AddCreditsForm({
   );
 }
 
+function ActivateNewAccount() {
+  const [principalText, setPrincipalText] = useState("");
+  const [credits, setCredits] = useState("10");
+  const mutation = useAddCreditsAdmin();
+
+  const handleActivate = async () => {
+    const trimmed = principalText.trim();
+    if (!trimmed) {
+      toast.error("Paste the customer's Principal ID");
+      return;
+    }
+    const n = Number.parseInt(credits, 10);
+    if (!n || n <= 0) {
+      toast.error("Enter a valid credit amount");
+      return;
+    }
+    let principalObj: Principal;
+    try {
+      principalObj = Principal.fromText(trimmed);
+    } catch {
+      toast.error("Invalid Principal ID format");
+      return;
+    }
+    try {
+      await mutation.mutateAsync({ storeId: principalObj, amount: BigInt(n) });
+      toast.success(`Account activated with ${n} credits`);
+      setPrincipalText("");
+      setCredits("10");
+    } catch (e) {
+      toast.error(`Failed to activate: ${String(e)}`);
+    }
+  };
+
+  return (
+    <Card className="shadow-card border-indigo/20 bg-indigo/5">
+      <CardHeader className="pb-3 pt-4 px-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-indigo/15 flex items-center justify-center">
+            <UserPlus className="w-4 h-4 text-indigo" />
+          </div>
+          <div>
+            <CardTitle className="text-base text-indigo">
+              Activate New Account
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Paste the Principal ID from a new customer's "Account Inactive"
+              screen
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-3">
+        <div>
+          <p className="text-xs font-medium text-foreground mb-1">
+            Customer Principal ID
+          </p>
+          <Input
+            placeholder="Paste principal ID here (e.g. abc12-xyz...)"
+            value={principalText}
+            onChange={(e) => setPrincipalText(e.target.value)}
+            className="font-mono text-xs h-9"
+            data-ocid="admin.activate_principal_input"
+          />
+        </div>
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <p className="text-xs font-medium text-foreground mb-1">
+              Credits to Add
+            </p>
+            <Input
+              type="number"
+              min="1"
+              placeholder="10"
+              value={credits}
+              onChange={(e) => setCredits(e.target.value)}
+              className="h-9 text-sm"
+              data-ocid="admin.activate_credits_input"
+            />
+          </div>
+          <Button
+            onClick={handleActivate}
+            disabled={mutation.isPending || !principalText.trim()}
+            className="bg-indigo hover:bg-indigo/90 text-white h-9 px-5 font-semibold text-sm"
+            data-ocid="admin.activate_button"
+          >
+            {mutation.isPending ? "Activating..." : "Activate"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPanel() {
-  const { isFetching: actorFetching } = useActor();
+  const { isFetching: actorFetching, actorError } = useActor();
   const { data: isAdmin, isLoading: isAdminLoading } = useIsCallerAdmin();
-  const { data: stores = [], isLoading: storesLoading } =
-    useGetAllStoresAdmin();
+  const {
+    data: stores = [],
+    isLoading: storesLoading,
+    error: storesError,
+  } = useGetAllStoresAdmin();
   const [addingFor, setAddingFor] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const refreshAllData = useRefreshAllData();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -144,6 +268,17 @@ export default function AdminPanel() {
       setIsRefreshing(false);
     }
   };
+
+  const filteredStores = stores.filter((store) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      store.storeName.toLowerCase().includes(q) ||
+      store.phone.toLowerCase().includes(q) ||
+      store.address.toLowerCase().includes(q) ||
+      store.gstin.toLowerCase().includes(q)
+    );
+  });
 
   if (actorFetching || isAdminLoading) {
     return (
@@ -215,20 +350,51 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Desktop Table */}
+      {/* Activate New Account */}
+      <ActivateNewAccount />
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by store name, phone, address, or GSTIN..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9 h-10"
+          data-ocid="admin.search_input"
+        />
+      </div>
+
+      {/* Visible error boxes for mobile debugging */}
+      {actorError && (
+        <ErrorBox
+          title="Connection Error (actor)"
+          message={String(actorError)}
+        />
+      )}
+      {storesError && (
+        <ErrorBox
+          title="Data Fetch Error (getAllStoresAdmin)"
+          message={String(storesError)}
+        />
+      )}
+
+      {/* Store List */}
       {storesLoading ? (
         <div className="space-y-3" data-ocid="admin.loading_state">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-14 w-full rounded-lg" />
           ))}
         </div>
-      ) : stores.length === 0 ? (
+      ) : filteredStores.length === 0 ? (
         <div
           className="text-center py-16 text-muted-foreground text-sm"
           data-ocid="admin.empty_state"
         >
           <Store className="w-8 h-8 mx-auto mb-2 opacity-40" />
-          No stores registered yet.
+          {searchQuery
+            ? "No stores match your search."
+            : "No stores registered yet."}
         </div>
       ) : (
         <>
@@ -240,6 +406,8 @@ export default function AdminPanel() {
                   <TableRow className="bg-muted/50">
                     <TableHead className="font-semibold">#</TableHead>
                     <TableHead className="font-semibold">Store Name</TableHead>
+                    <TableHead className="font-semibold">Contact</TableHead>
+                    <TableHead className="font-semibold">Address</TableHead>
                     <TableHead className="font-semibold">
                       Principal ID
                     </TableHead>
@@ -248,7 +416,7 @@ export default function AdminPanel() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stores.map((store, idx) => {
+                  {filteredStores.map((store, idx) => {
                     const storeKey = store.owner.toString();
                     const rowNum = idx + 1;
                     return (
@@ -260,15 +428,52 @@ export default function AdminPanel() {
                           {rowNum}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {store.storeName || (
-                            <span className="text-muted-foreground italic">
-                              Unnamed
+                          <div>
+                            {store.storeName || (
+                              <span className="text-muted-foreground italic">
+                                Unnamed
+                              </span>
+                            )}
+                            {store.gstin && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                GSTIN: {store.gstin}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {store.phone ? (
+                            <a
+                              href={`tel:${store.phone}`}
+                              className="flex items-center gap-1 text-sm text-indigo hover:underline"
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {store.phone}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground text-xs italic">
+                              —
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-[180px]">
+                          {store.address ? (
+                            <div className="flex items-start gap-1 text-xs text-muted-foreground">
+                              <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                              <span className="line-clamp-2">
+                                {store.address}
+                                {store.state ? `, ${store.state}` : ""}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs italic">
+                              —
                             </span>
                           )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded text-muted-foreground max-w-[200px] truncate block">
+                            <code className="text-xs font-mono bg-muted px-2 py-0.5 rounded text-muted-foreground max-w-[150px] truncate block">
                               {storeKey}
                             </code>
                             <CopyButton text={storeKey} />
@@ -308,7 +513,7 @@ export default function AdminPanel() {
 
           {/* Mobile Cards */}
           <div className="md:hidden space-y-3" data-ocid="admin.list">
-            {stores.map((store, idx) => {
+            {filteredStores.map((store, idx) => {
               const storeKey = store.owner.toString();
               const rowNum = idx + 1;
               return (
@@ -323,18 +528,48 @@ export default function AdminPanel() {
                         <div className="w-8 h-8 rounded-lg bg-saffron-light flex items-center justify-center flex-shrink-0">
                           <Store className="w-4 h-4 text-saffron" />
                         </div>
-                        <CardTitle className="text-base">
-                          {store.storeName || (
-                            <span className="text-muted-foreground italic font-normal">
-                              Unnamed Store
-                            </span>
+                        <div>
+                          <CardTitle className="text-base">
+                            {store.storeName || (
+                              <span className="text-muted-foreground italic font-normal">
+                                Unnamed Store
+                              </span>
+                            )}
+                          </CardTitle>
+                          {store.gstin && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              GSTIN: {store.gstin}
+                            </p>
                           )}
-                        </CardTitle>
+                        </div>
                       </div>
                       <CreditBadge credits={store.credits} />
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-3">
+                    {/* Contact & Address */}
+                    <div className="grid grid-cols-1 gap-2">
+                      {store.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-indigo flex-shrink-0" />
+                          <a
+                            href={`tel:${store.phone}`}
+                            className="text-sm text-indigo hover:underline font-medium"
+                          >
+                            {store.phone}
+                          </a>
+                        </div>
+                      )}
+                      {store.address && (
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                          <span className="text-xs text-muted-foreground">
+                            {store.address}
+                            {store.state ? `, ${store.state}` : ""}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">
                         Principal ID

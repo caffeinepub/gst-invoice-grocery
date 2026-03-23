@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -15,9 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronLeft, Eye, Loader2, Printer, Receipt } from "lucide-react";
+import { Download, Eye, Loader2, Printer, Receipt } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 import type { Invoice } from "../backend.d";
 import ThermalReceipt, { invoiceToDisplay } from "../components/ThermalReceipt";
 import { useGetInvoices, useGetStore } from "../hooks/useQueries";
@@ -27,14 +29,94 @@ const fmt = (paise: bigint) =>
     Number(paise) / 100,
   );
 
+const fmtNum = (paise: bigint) => (Number(paise) / 100).toFixed(2);
+
 export default function Invoices() {
   const { data: invoices = [], isLoading } = useGetInvoices();
   const { data: store } = useGetStore();
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  const sorted = [...invoices].sort(
-    (a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber),
-  );
+  const filtered = useMemo(() => {
+    let list = [...invoices].sort(
+      (a, b) => Number(b.invoiceNumber) - Number(a.invoiceNumber),
+    );
+    if (dateFrom) {
+      const from = new Date(dateFrom).getTime();
+      list = list.filter((inv) => Number(inv.date) / 1_000_000 >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo).getTime() + 86400000;
+      list = list.filter((inv) => Number(inv.date) / 1_000_000 <= to);
+    }
+    return list;
+  }, [invoices, dateFrom, dateTo]);
+
+  const handleExportExcel = () => {
+    if (filtered.length === 0) return;
+
+    const storeName = store?.name || "Store";
+    const storeGstin = store?.gstin || "";
+
+    const summaryData = filtered.map((inv, i) => ({
+      "#": i + 1,
+      "Invoice No": `#${inv.invoiceNumber.toString()}`,
+      Date: new Date(Number(inv.date) / 1_000_000).toLocaleDateString("en-IN"),
+      "Customer Name": inv.customerName || "Walk-in",
+      "Customer GSTIN": inv.customerGstin || "",
+      "GST Type": inv.isIgst ? "IGST" : "CGST+SGST",
+      "Items Count": inv.lineItems.length,
+      "Subtotal (Rs)": fmtNum(inv.subtotal),
+      "Total CGST (Rs)": fmtNum(inv.totalCgst),
+      "Total SGST (Rs)": fmtNum(inv.totalSgst),
+      "Total IGST (Rs)": fmtNum(inv.totalIgst),
+      "Grand Total (Rs)": fmtNum(inv.grandTotal),
+    }));
+
+    const detailData: object[] = [];
+    for (const inv of filtered) {
+      for (const item of inv.lineItems) {
+        detailData.push({
+          "Invoice No": `#${inv.invoiceNumber.toString()}`,
+          Date: new Date(Number(inv.date) / 1_000_000).toLocaleDateString(
+            "en-IN",
+          ),
+          Customer: inv.customerName || "Walk-in",
+          "Product Name": item.productName,
+          "HSN Code": item.hsnCode,
+          Qty: Number(item.qty),
+          "Rate (Rs)": fmtNum(item.rate),
+          "GST Rate (%)": Number(item.gstRate),
+          "CGST (Rs)": fmtNum(item.cgstAmt),
+          "SGST (Rs)": fmtNum(item.sgstAmt),
+          "IGST (Rs)": fmtNum(item.igstAmt),
+          "Line Total (Rs)": fmtNum(item.lineTotal),
+        });
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    const infoRows = [
+      ["Store Name", storeName],
+      ["GSTIN", storeGstin],
+      ["Report Date", new Date().toLocaleDateString("en-IN")],
+      ["Period", `${dateFrom || "All"} to ${dateTo || "All"}`],
+      [],
+    ];
+
+    const summaryWs = XLSX.utils.aoa_to_sheet(infoRows);
+    XLSX.utils.sheet_add_json(summaryWs, summaryData, { origin: -1 });
+    XLSX.utils.book_append_sheet(wb, summaryWs, "Invoice Summary");
+
+    const detailWs = XLSX.utils.json_to_sheet(detailData);
+    XLSX.utils.book_append_sheet(wb, detailWs, "Line Items");
+
+    const fromStr = dateFrom || "all";
+    const toStr = dateTo || "all";
+    XLSX.writeFile(wb, `invoices_${fromStr}_to_${toStr}.xlsx`);
+  };
 
   return (
     <motion.div
@@ -45,13 +127,67 @@ export default function Invoices() {
     >
       <Card className="shadow-card border-border">
         <CardHeader className="border-b border-border pb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-lg font-semibold">
               Saved Invoices
             </CardTitle>
-            <Badge variant="secondary" className="text-sm">
-              {invoices.length} invoice{invoices.length !== 1 ? "s" : ""}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                {filtered.length} invoice{filtered.length !== 1 ? "s" : ""}
+              </Badge>
+              <Button
+                size="sm"
+                onClick={handleExportExcel}
+                disabled={filtered.length === 0}
+                className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 text-xs font-semibold"
+                data-ocid="invoices.export_button"
+              >
+                <Download className="w-3.5 h-3.5 mr-1" /> Export Excel
+              </Button>
+            </div>
+          </div>
+
+          {/* Date Filter */}
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">
+                From:
+              </span>
+              <Input
+                id="date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-8 text-sm w-36"
+                data-ocid="invoices.date_from"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">
+                To:
+              </span>
+              <Input
+                id="date-to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-8 text-sm w-36"
+                data-ocid="invoices.date_to"
+              />
+            </div>
+            {(dateFrom || dateTo) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+                className="h-8 text-xs text-muted-foreground"
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -62,14 +198,16 @@ export default function Invoices() {
             >
               <Loader2 className="w-8 h-8 animate-spin text-teal" />
             </div>
-          ) : sorted.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div
               className="flex flex-col items-center py-16 text-center"
               data-ocid="invoices.empty_state"
             >
               <Receipt className="w-10 h-10 text-muted-foreground mb-3" />
               <p className="text-muted-foreground">
-                No invoices yet. Create your first invoice!
+                {invoices.length === 0
+                  ? "No invoices yet. Create your first invoice!"
+                  : "No invoices match the selected date range."}
               </p>
             </div>
           ) : (
@@ -88,7 +226,7 @@ export default function Invoices() {
                 </TableHeader>
                 <TableBody>
                   <AnimatePresence>
-                    {sorted.map((inv, i) => (
+                    {filtered.map((inv, i) => (
                       <motion.tr
                         key={inv.invoiceNumber.toString()}
                         initial={{ opacity: 0 }}

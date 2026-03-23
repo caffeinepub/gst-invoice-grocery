@@ -11,6 +11,11 @@ export interface AdminStoreView {
     credits: bigint;
     owner: Principal;
     storeName: string;
+    phone: string;
+    address: string;
+    gstin: string;
+    fssai: string;
+    state: string;
 }
 export type Time = bigint;
 export interface LineItem {
@@ -100,4 +105,5 @@ export interface backendInterface {
     updateProduct(sku: string, name: string, hsnCode: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
     updateProductStock(productId: string, newQty: bigint): Promise<void>;
     updateStore(name: string, address: string, gstin: string, fssai: string, phone: string, state: string): Promise<StoreProfile>;
+    _initializeAccessControlWithSecret(secret: string): Promise<void>;
 }

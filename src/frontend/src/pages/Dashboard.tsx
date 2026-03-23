@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  AlertTriangle,
   ArrowRight,
   Package,
   Receipt,
@@ -24,13 +25,31 @@ const fmt = (paise: bigint) =>
     Number(paise) / 100,
   );
 
+function ErrorBox({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="rounded-xl border border-red-300 bg-red-50 p-4 flex gap-3 items-start">
+      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+      <div>
+        <div className="font-semibold text-red-700 text-sm">{title}</div>
+        <div className="text-red-600 text-xs mt-1 font-mono break-all">
+          {message}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   onNavigate: (tab: string) => void;
 }
 
 export default function Dashboard({ onNavigate }: Props) {
-  const { isFetching: actorFetching } = useActor();
-  const { data: summary, isLoading } = useGetStoreSummary();
+  const { isFetching: actorFetching, actorError } = useActor();
+  const {
+    data: summary,
+    isLoading,
+    error: summaryError,
+  } = useGetStoreSummary();
   const { data: credits } = useGetMyCredits();
   const refreshAllData = useRefreshAllData();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -78,37 +97,68 @@ export default function Dashboard({ onNavigate }: Props) {
     );
   }
 
-  if (!summary) {
+  // "Store not found" is a normal state (new user, no store registered yet)
+  const isStoreNotFound =
+    summaryError &&
+    String(summaryError).toLowerCase().includes("store not found");
+
+  // Only treat as real error if it's NOT a "store not found" message
+  const hasError = actorError || (summaryError && !isStoreNotFound);
+
+  // Show no-store UI if the error says store not found, or if there's no summary and no other error
+  const noStore =
+    isStoreNotFound || (!hasError && !summary && !isLoading && !actorFetching);
+
+  if (hasError || noStore || !summary) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-center justify-center py-16 text-center px-4"
+        className="flex flex-col items-center justify-center py-10 text-center px-4 space-y-4"
         data-ocid="dashboard.empty_state"
       >
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-saffron-light to-saffron/20 flex items-center justify-center mb-5 shadow-warm">
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-saffron-light to-saffron/20 flex items-center justify-center shadow-warm">
           <Store className="w-10 h-10 text-saffron" />
         </div>
-        <h2 className="font-display text-2xl font-bold text-foreground mb-2">
-          Set up your store
+        <h2 className="font-display text-2xl font-bold text-foreground">
+          {hasError ? "Error loading data" : "Set up your store"}
         </h2>
-        <p className="text-muted-foreground mb-6 max-w-xs text-sm leading-relaxed">
-          Register your store details to start creating GST invoices and
-          managing your product inventory.
-        </p>
-        <Button
-          onClick={() => onNavigate("store")}
-          className="bg-gradient-to-r from-saffron to-saffron-dark text-white shadow-warm h-12 px-6 rounded-xl font-semibold"
-          data-ocid="dashboard.primary_button"
-        >
-          <Store className="w-4 h-4 mr-2" /> Set Up Store
-          <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
+        {!hasError && (
+          <p className="text-muted-foreground max-w-xs text-sm leading-relaxed">
+            Register your store details to start creating GST invoices.
+          </p>
+        )}
+
+        {/* Only show error boxes for real (unexpected) errors */}
+        {actorError && (
+          <ErrorBox
+            title="Connection Error (actor)"
+            message={String(actorError)}
+          />
+        )}
+        {summaryError && !isStoreNotFound && (
+          <ErrorBox
+            title="Data Fetch Error (storeSummary)"
+            message={String(summaryError)}
+          />
+        )}
+
+        {/* Always show the setup button when there's no store */}
+        {(noStore || !hasError) && (
+          <Button
+            onClick={() => onNavigate("store")}
+            className="bg-gradient-to-r from-saffron to-saffron-dark text-white shadow-warm h-12 px-6 rounded-xl font-semibold"
+            data-ocid="dashboard.primary_button"
+          >
+            <Store className="w-4 h-4 mr-2" /> Set Up Store
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        )}
         <button
           type="button"
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="mt-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-saffron transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-saffron transition-colors disabled:opacity-50"
           data-ocid="dashboard.secondary_button"
         >
           <RefreshCw
@@ -172,12 +222,10 @@ export default function Dashboard({ onNavigate }: Props) {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-saffron via-saffron-dark to-indigo p-5 text-white shadow-warm-lg"
       >
-        {/* Decorative circles */}
         <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/10" />
         <div className="absolute -bottom-8 -right-2 w-24 h-24 rounded-full bg-white/8" />
         <div className="absolute top-2 right-16 w-8 h-8 rounded-full bg-white/15" />
 
-        {/* Refresh button */}
         <button
           type="button"
           onClick={handleRefresh}
@@ -262,7 +310,7 @@ export default function Dashboard({ onNavigate }: Props) {
         </div>
       </motion.div>
 
-      {/* Stat Cards — 2-col mobile, 4-col lg */}
+      {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((stat, i) => (
           <motion.div
@@ -301,7 +349,6 @@ export default function Dashboard({ onNavigate }: Props) {
           </p>
         </div>
         <div className="grid grid-cols-3 divide-x divide-border">
-          {/* CGST */}
           <div className="p-4 text-center">
             <div className="w-8 h-8 rounded-full bg-saffron-light flex items-center justify-center mx-auto mb-2">
               <span className="text-xs font-bold text-saffron">C</span>
@@ -311,7 +358,6 @@ export default function Dashboard({ onNavigate }: Props) {
               {fmt(summary.totalCgst)}
             </div>
           </div>
-          {/* SGST */}
           <div
             className="p-4 text-center"
             style={{ background: "oklch(0.97 0.04 55)" }}
@@ -324,7 +370,6 @@ export default function Dashboard({ onNavigate }: Props) {
               {fmt(summary.totalSgst)}
             </div>
           </div>
-          {/* IGST */}
           <div
             className="p-4 text-center"
             style={{ background: "oklch(0.95 0.04 275)" }}

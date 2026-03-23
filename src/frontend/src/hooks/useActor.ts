@@ -10,51 +10,57 @@ export const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
-
   const actorQuery = useQuery<backendInterface>({
-    queryKey: [
-      ACTOR_QUERY_KEY,
-      identity?.getPrincipal().toString() ?? "anonymous",
-    ],
+    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
     queryFn: async () => {
-      if (!identity) {
+      const isAuthenticated = !!identity;
+
+      if (!isAuthenticated) {
         return await createActorWithConfig();
       }
 
-      const actor = await createActorWithConfig({
-        agentOptions: { identity },
-      });
+      const actorOptions = {
+        agentOptions: {
+          identity,
+        },
+      };
 
-      // CRITICAL: must be wrapped in try/catch
-      // If this throws in production, we still return the actor
+      const actor = await createActorWithConfig(actorOptions);
       try {
         const adminToken = getSecretParameter("caffeineAdminToken") || "";
         await actor._initializeAccessControlWithSecret(adminToken);
-      } catch (_e) {
-        // Ignore -- actor still works for all data queries
+      } catch {
+        // ignore -- actor still usable without admin token
       }
-
       return actor;
     },
     staleTime: Number.POSITIVE_INFINITY,
     enabled: true,
   });
 
-  const refetchActor = async () => {
-    await actorQuery.refetch();
-  };
-
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
-        predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
+        predicate: (query) => {
+          return !query.queryKey.includes(ACTOR_QUERY_KEY);
+        },
+      });
+      queryClient.refetchQueries({
+        predicate: (query) => {
+          return !query.queryKey.includes(ACTOR_QUERY_KEY);
+        },
       });
     }
   }, [actorQuery.data, queryClient]);
 
+  const refetchActor = async () => {
+    await actorQuery.refetch();
+  };
+
   return {
-    actor: actorQuery.data ?? null,
+    actor: actorQuery.data || null,
     isFetching: actorQuery.isFetching,
+    actorError: actorQuery.error,
     refetchActor,
   };
 }

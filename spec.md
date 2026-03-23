@@ -1,24 +1,33 @@
 # GST Invoice - Grocery
 
 ## Current State
-Full GST invoice app with store management, products, invoices, admin panel. Backend data is NOT in stable variables so it clears on every upgrade. The persistent data loading failure is caused by two frontend bugs:
-1. `useActor.ts`: `_initializeAccessControlWithSecret` is called without try/catch -- any error throws from queryFn, actor is never returned, all queries are permanently disabled
-2. `useQueries.ts`: `useRefreshAllData` calls `refetchActor` which is not returned from `useActor()` -- runtime crash on every refresh attempt
+- Admin panel shows stores with: store name, principal ID, credits, add credits button
+- Invoices page shows saved invoices in a table with view/print action
+- No search/filter in admin panel
+- No Excel export for invoices
+- No date filter on invoices page
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nothing new
+- Search bar in Admin Panel to filter stores by name, phone, or address for quick recharge
+- Contact details (phone, address, GSTIN, FSSAI) visible in Admin Panel store cards/rows
+- Date filter (from date / to date) on Invoices page
+- Export to Excel button on Invoices page that downloads all filtered invoices with full details (invoice #, date, customer name, customer GSTIN, GST type, items count, subtotal, CGST, SGST, IGST, grand total)
+- Install `xlsx` (SheetJS) npm package for Excel generation
 
 ### Modify
-- `useActor.ts`: wrap `_initializeAccessControlWithSecret` call in try/catch so any failure is silently ignored and the actor is always returned
-- `useActor.ts`: export `refetchActor` properly from the hook
-- `useQueries.ts`: fix `useRefreshAllData` to not call non-existent `refetchActor`
+- Backend `AdminStoreView` type to include `phone`, `address`, `gstin`, `fssai`, `state` fields
+- Backend `getAllStoresAdmin` to populate these extra fields from the store profile
+- Admin Panel desktop table to show phone and address columns
+- Admin Panel mobile cards to show phone and address
 
 ### Remove
-- All backend store/product/invoice/credit data is wiped on redeploy (non-stable variables)
+- Nothing removed
 
 ## Implementation Plan
-1. Rewrite `useActor.ts` with proper try/catch and correct exports
-2. Rewrite `useQueries.ts` to fix refresh logic
-3. Validate and deploy
+1. Update `AdminStoreView` type in `main.mo` to include phone, address, gstin, fssai, state
+2. Update `getAllStoresAdmin` in `main.mo` to populate new fields
+3. Install `xlsx` package in frontend
+4. Update `AdminPanel.tsx`: add search bar state, filter stores list, show phone/address/gstin in table and cards
+5. Update `Invoices.tsx`: add date-from / date-to filter inputs, filter sorted invoices accordingly, add Export Excel button using SheetJS that downloads a .xlsx file with all invoice columns
