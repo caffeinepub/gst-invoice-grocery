@@ -10,29 +10,28 @@ export const ACTOR_QUERY_KEY = "actor";
 export function useActor() {
   const { identity } = useInternetIdentity();
   const queryClient = useQueryClient();
-  const actorQuery = useQuery<backendInterface>({
-    queryKey: [ACTOR_QUERY_KEY, identity?.getPrincipal().toString()],
-    queryFn: async () => {
-      const isAuthenticated = !!identity;
 
-      if (!isAuthenticated) {
+  const actorQuery = useQuery<backendInterface>({
+    queryKey: [
+      ACTOR_QUERY_KEY,
+      identity?.getPrincipal().toString() ?? "anonymous",
+    ],
+    queryFn: async () => {
+      if (!identity) {
         return await createActorWithConfig();
       }
 
-      const actorOptions = {
-        agentOptions: {
-          identity,
-        },
-      };
+      const actor = await createActorWithConfig({
+        agentOptions: { identity },
+      });
 
-      const actor = await createActorWithConfig(actorOptions);
-
-      // IMPORTANT: must be in try/catch -- if this throws, we still return the actor
+      // CRITICAL: must be wrapped in try/catch
+      // If this throws in production, we still return the actor
       try {
         const adminToken = getSecretParameter("caffeineAdminToken") || "";
         await actor._initializeAccessControlWithSecret(adminToken);
-      } catch (e) {
-        console.warn("_initializeAccessControlWithSecret failed (ignored):", e);
+      } catch (_e) {
+        // Ignore -- actor still works for all data queries
       }
 
       return actor;
@@ -41,24 +40,20 @@ export function useActor() {
     enabled: true,
   });
 
-  // When the actor changes, invalidate and refetch all dependent queries
+  const refetchActor = async () => {
+    await actorQuery.refetch();
+  };
+
   useEffect(() => {
     if (actorQuery.data) {
       queryClient.invalidateQueries({
         predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
       });
-      queryClient.refetchQueries({
-        predicate: (query) => !query.queryKey.includes(ACTOR_QUERY_KEY),
-      });
     }
   }, [actorQuery.data, queryClient]);
 
-  const refetchActor = async () => {
-    await actorQuery.refetch();
-  };
-
   return {
-    actor: actorQuery.data || null,
+    actor: actorQuery.data ?? null,
     isFetching: actorQuery.isFetching,
     refetchActor,
   };

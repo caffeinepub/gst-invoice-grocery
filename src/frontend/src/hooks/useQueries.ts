@@ -22,8 +22,7 @@ export function useGetStore() {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        const result = await actor.getStore();
-        return result;
+        return await actor.getStore();
       } catch (e) {
         console.error("getStore error:", e);
         return null;
@@ -41,8 +40,7 @@ export function useGetStoreSummary() {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        const result = await actor.getStoreSummary();
-        return result;
+        return await actor.getStoreSummary();
       } catch (e) {
         console.error("getStoreSummary error:", e);
         return null;
@@ -60,8 +58,7 @@ export function useGetProducts() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const result = await actor.getProducts();
-        return result;
+        return await actor.getProducts();
       } catch (e) {
         console.error("getProducts error:", e);
         return [];
@@ -79,8 +76,7 @@ export function useGetInvoices() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const result = await actor.getInvoices();
-        return result;
+        return await actor.getInvoices();
       } catch (e) {
         console.error("getInvoices error:", e);
         return [];
@@ -321,8 +317,7 @@ export function useGetAllStoresAdmin() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const result = await actor.getAllStoresAdmin();
-        return result;
+        return await actor.getAllStoresAdmin();
       } catch (e) {
         console.error("getAllStoresAdmin error:", e);
         return [];
@@ -339,9 +334,12 @@ export function useAddCreditsAdmin() {
   const principal = identity?.getPrincipal().toString() ?? "";
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { storeId: any; amount: bigint }) => {
+    mutationFn: async (data: { storeId: unknown; amount: bigint }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.addCreditsAdmin(data.storeId, data.amount);
+      return actor.addCreditsAdmin(
+        data.storeId as Parameters<typeof actor.addCreditsAdmin>[0],
+        data.amount,
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["allStoresAdmin", principal] });
@@ -350,7 +348,6 @@ export function useAddCreditsAdmin() {
   });
 }
 
-// Refresh all data queries
 export function useRefreshAllData() {
   const qc = useQueryClient();
   const { refetchActor } = useActor();
@@ -358,8 +355,8 @@ export function useRefreshAllData() {
   return async () => {
     try {
       await refetchActor();
-    } catch (e) {
-      console.warn("Actor refetch failed:", e);
+    } catch (_e) {
+      // ignore
     }
     await qc.invalidateQueries({
       predicate: (q) => !q.queryKey.includes(ACTOR_QUERY_KEY),

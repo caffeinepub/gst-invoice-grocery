@@ -1,26 +1,24 @@
 # GST Invoice - Grocery
 
 ## Current State
-The app uses `useActor.ts` with react-query to create the ICP actor after login. The `_initializeAccessControlWithSecret` call inside the queryFn is not wrapped in a try/catch -- if it throws, the entire actor query fails, `actor` stays null, and all data queries are gated on `!!actor`, so nothing loads.
+Full GST invoice app with store management, products, invoices, admin panel. Backend data is NOT in stable variables so it clears on every upgrade. The persistent data loading failure is caused by two frontend bugs:
+1. `useActor.ts`: `_initializeAccessControlWithSecret` is called without try/catch -- any error throws from queryFn, actor is never returned, all queries are permanently disabled
+2. `useQueries.ts`: `useRefreshAllData` calls `refetchActor` which is not returned from `useActor()` -- runtime crash on every refresh attempt
 
 ## Requested Changes (Diff)
 
 ### Add
-- Manual "Refresh Data" button on Dashboard and AdminPanel for users to force-reload data
-- Retry logic on the actor query
+- Nothing new
 
 ### Modify
-- `useActor.ts`: Wrap `_initializeAccessControlWithSecret` in try/catch so actor is always returned even if init fails
-- `useActor.ts`: Set `retry: 2` on actor query
-- `useActor.ts`: Remove `staleTime: Infinity` and instead use a reasonable stale time so queries can refetch
-- `useQueries.ts`: Add `refetchOnMount: true` and `staleTime: 0` to all data queries so they always fetch fresh data on mount
-- Dashboard: Add a refresh button
-- AdminPanel: Add a refresh button
+- `useActor.ts`: wrap `_initializeAccessControlWithSecret` call in try/catch so any failure is silently ignored and the actor is always returned
+- `useActor.ts`: export `refetchActor` properly from the hook
+- `useQueries.ts`: fix `useRefreshAllData` to not call non-existent `refetchActor`
 
 ### Remove
-- Nothing
+- All backend store/product/invoice/credit data is wiped on redeploy (non-stable variables)
 
 ## Implementation Plan
-1. Fix `useActor.ts`: wrap init in try/catch, add retry, adjust staleTime
-2. Fix `useQueries.ts`: add refetchOnMount and staleTime:0 to all data queries
-3. Add refresh buttons to Dashboard and AdminPanel
+1. Rewrite `useActor.ts` with proper try/catch and correct exports
+2. Rewrite `useQueries.ts` to fix refresh logic
+3. Validate and deploy
