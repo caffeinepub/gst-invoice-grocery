@@ -4,8 +4,7 @@ import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 const FIXED_ADMIN_PRINCIPALS = [
-  "t7rbm-oz7cl-o4eaq-noqjj-f3x5g-b7uya-tdqqb-xiqpw-ujqal-6ycnj-2qe",
-  "ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe",
+  "f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe",
 ];
 
 export function useGetStore() {
@@ -260,7 +259,6 @@ export function useIsCallerAdmin() {
   return useQuery({
     queryKey: ["isCallerAdmin", principal],
     queryFn: async (): Promise<boolean> => {
-      // Grant admin to all fixed hardcoded principals
       if (FIXED_ADMIN_PRINCIPALS.includes(principal)) return true;
       if (!actor) return false;
       try {
@@ -275,22 +273,29 @@ export function useIsCallerAdmin() {
 
 export function useGetAllStoresAdmin() {
   const { actor, isFetching } = useActor();
+  const { identity } = useInternetIdentity();
+  const principal = identity?.getPrincipal().toString() ?? "";
+
   return useQuery({
-    queryKey: ["allStoresAdmin"],
+    // Include principal in key so query re-runs fresh after login
+    queryKey: ["allStoresAdmin", principal],
     queryFn: async () => {
       if (!actor) return [];
       try {
         return await actor.getAllStoresAdmin();
-      } catch {
+      } catch (e) {
+        console.error("getAllStoresAdmin error:", e);
         return [];
       }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isFetching && !!principal,
   });
 }
 
 export function useAddCreditsAdmin() {
   const { actor } = useActor();
+  const { identity } = useInternetIdentity();
+  const principal = identity?.getPrincipal().toString() ?? "";
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: { storeId: any; amount: bigint }) => {
@@ -298,7 +303,7 @@ export function useAddCreditsAdmin() {
       return actor.addCreditsAdmin(data.storeId, data.amount);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["allStoresAdmin"] });
+      qc.invalidateQueries({ queryKey: ["allStoresAdmin", principal] });
       qc.invalidateQueries({ queryKey: ["myCredits"] });
     },
   });
