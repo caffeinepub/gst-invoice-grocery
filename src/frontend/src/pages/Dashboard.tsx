@@ -1,4 +1,11 @@
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertTriangle,
@@ -12,9 +19,10 @@ import {
   Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useGetMyCredits,
+  useGetProducts,
   useGetStoreSummary,
   useRefreshAllData,
 } from "../hooks/useQueries";
@@ -50,8 +58,22 @@ export default function Dashboard({ onNavigate }: Props) {
     error: summaryError,
   } = useGetStoreSummary();
   const { data: credits } = useGetMyCredits();
+  const { data: products = [] } = useGetProducts();
   const refreshAllData = useRefreshAllData();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showLowStock, setShowLowStock] = useState(false);
+  const [lowStockDismissed, setLowStockDismissed] = useState(false);
+
+  const lowStockItems = products.filter((p) => Number(p.stockQty) < 10);
+  const hasShownLowStockRef = useRef(false);
+
+  // Show low stock popup once on initial load
+  useEffect(() => {
+    if (lowStockItems.length > 0 && !hasShownLowStockRef.current) {
+      hasShownLowStockRef.current = true;
+      setShowLowStock(true);
+    }
+  }, [lowStockItems.length]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -209,6 +231,76 @@ export default function Dashboard({ onNavigate }: Props) {
       className="space-y-4"
       data-ocid="dashboard.section"
     >
+      {/* Low Stock Dialog */}
+      <Dialog open={showLowStock} onOpenChange={setShowLowStock}>
+        <DialogContent className="max-w-sm" data-ocid="dashboard.dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Low Stock Alert
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {lowStockItems.map((product) => {
+              const qty = Number(product.stockQty);
+              return (
+                <div
+                  key={product.sku}
+                  className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {product.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      SKU: {product.sku}
+                    </div>
+                  </div>
+                  {qty === 0 ? (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                      Out of Stock
+                    </span>
+                  ) : qty < 5 ? (
+                    <span className="text-xs font-bold text-red-600">
+                      {qty} left
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-amber-600">
+                      {qty} left
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter className="gap-2 flex-row">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowLowStock(false);
+                setLowStockDismissed(true);
+              }}
+              data-ocid="dashboard.cancel_button"
+            >
+              Dismiss
+            </Button>
+            <Button
+              size="sm"
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={() => {
+                setShowLowStock(false);
+                setLowStockDismissed(true);
+                onNavigate("products");
+              }}
+              data-ocid="dashboard.primary_button"
+            >
+              <Package className="w-3.5 h-3.5 mr-1" /> Go to Products
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Welcome Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -330,6 +422,33 @@ export default function Dashboard({ onNavigate }: Props) {
           </motion.div>
         ))}
       </div>
+
+      {/* Low Stock Banner (after dismissing popup) */}
+      {lowStockItems.length > 0 && lowStockDismissed && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between rounded-xl bg-amber-50 border border-amber-200 px-4 py-3"
+          data-ocid="dashboard.panel"
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+            <span className="text-sm font-medium text-amber-800">
+              ⚠ {lowStockItems.length} product
+              {lowStockItems.length > 1 ? "s" : ""} have low stock
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowLowStock(true)}
+            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100"
+            data-ocid="dashboard.secondary_button"
+          >
+            View
+          </Button>
+        </motion.div>
+      )}
 
       {/* GST Summary */}
       <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">

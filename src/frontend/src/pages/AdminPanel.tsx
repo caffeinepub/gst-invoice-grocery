@@ -17,6 +17,7 @@ import {
   Check,
   Copy,
   MapPin,
+  MessageCircle,
   Phone,
   Plus,
   RefreshCw,
@@ -69,6 +70,37 @@ function CopyButton({ text }: { text: string }) {
         <Copy className="w-3.5 h-3.5 text-muted-foreground" />
       )}
     </button>
+  );
+}
+
+function WhatsAppButton({ phone }: { phone: string }) {
+  const hasPhone = !!phone;
+  const waUrl = `https://wa.me/91${phone}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`;
+
+  if (!hasPhone) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="No phone number"
+        className="p-1.5 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed"
+      >
+        <MessageCircle className="w-4 h-4" />
+      </button>
+    );
+  }
+
+  return (
+    <a
+      href={waUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Send WhatsApp notification"
+      className="inline-flex items-center justify-center p-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+      data-ocid="admin.secondary_button"
+    >
+      <MessageCircle className="w-4 h-4" />
+    </a>
   );
 }
 
@@ -286,10 +318,12 @@ export default function AdminPanel() {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      store.storeName.toLowerCase().includes(q) ||
-      store.phone.toLowerCase().includes(q) ||
-      store.address.toLowerCase().includes(q) ||
-      store.gstin.toLowerCase().includes(q)
+      (store.storeName || "").toLowerCase().includes(q) ||
+      (store.phone || "").toLowerCase().includes(q) ||
+      (store.address || "").toLowerCase().includes(q) ||
+      (store.gstin || "").toLowerCase().includes(q) ||
+      (store.state || "").toLowerCase().includes(q) ||
+      (store.fssai || "").toLowerCase().includes(q)
     );
   });
 
@@ -439,42 +473,38 @@ export default function AdminPanel() {
                                 Unnamed
                               </span>
                             )}
-                            {store.gstin && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                GSTIN: {store.gstin}
-                              </div>
-                            )}
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              GSTIN: {store.gstin || "—"}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          {store.phone ? (
-                            <a
-                              href={`tel:${store.phone}`}
-                              className="flex items-center gap-1 text-sm text-indigo hover:underline"
-                            >
-                              <Phone className="w-3.5 h-3.5" />
-                              {store.phone}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground text-xs italic">
-                              —
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {store.phone ? (
+                              <a
+                                href={`tel:${store.phone}`}
+                                className="flex items-center gap-1 text-sm text-indigo hover:underline"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                                {store.phone}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground text-xs italic flex items-center gap-1">
+                                <Phone className="w-3.5 h-3.5" /> —
+                              </span>
+                            )}
+                            <WhatsAppButton phone={store.phone || ""} />
+                          </div>
                         </TableCell>
                         <TableCell className="max-w-[180px]">
-                          {store.address ? (
-                            <div className="flex items-start gap-1 text-xs text-muted-foreground">
-                              <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                              <span className="line-clamp-2">
-                                {store.address}
-                                {store.state ? `, ${store.state}` : ""}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs italic">
-                              —
+                          <div className="flex items-start gap-1 text-xs text-muted-foreground">
+                            <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                            <span className="line-clamp-2">
+                              {store.address
+                                ? `${store.address}${store.state ? `, ${store.state}` : ""}`
+                                : "—"}
                             </span>
-                          )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -541,40 +571,56 @@ export default function AdminPanel() {
                               </span>
                             )}
                           </CardTitle>
-                          {store.gstin && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              GSTIN: {store.gstin}
-                            </p>
-                          )}
                         </div>
                       </div>
                       <CreditBadge credits={store.credits} />
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 space-y-3">
-                    {/* Contact & Address */}
-                    <div className="grid grid-cols-1 gap-2">
-                      {store.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="w-3.5 h-3.5 text-indigo flex-shrink-0" />
+                    {/* Always-visible store details */}
+                    <div className="grid grid-cols-1 gap-1.5 bg-muted/40 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Phone className="w-3.5 h-3.5 text-indigo flex-shrink-0" />
+                        <span className="text-xs text-muted-foreground font-medium w-14">
+                          Mobile:
+                        </span>
+                        {store.phone ? (
                           <a
                             href={`tel:${store.phone}`}
                             className="text-sm text-indigo hover:underline font-medium"
                           >
                             {store.phone}
                           </a>
-                        </div>
-                      )}
-                      {store.address && (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        ) : (
                           <span className="text-xs text-muted-foreground">
-                            {store.address}
-                            {store.state ? `, ${store.state}` : ""}
+                            —
                           </span>
-                        </div>
-                      )}
+                        )}
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="text-xs text-muted-foreground mt-0.5">
+                          🏢
+                        </span>
+                        <span className="text-xs text-muted-foreground font-medium w-14">
+                          GSTIN:
+                        </span>
+                        <span className="text-xs font-mono text-foreground">
+                          {store.gstin || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        <span className="text-xs text-muted-foreground font-medium w-14">
+                          Address:
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {store.address
+                            ? `${store.address}${store.state ? `, ${store.state}` : ""}`
+                            : "—"}
+                        </span>
+                      </div>
                     </div>
+
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">
                         Principal ID
@@ -586,6 +632,7 @@ export default function AdminPanel() {
                         <CopyButton text={storeKey} />
                       </div>
                     </div>
+
                     {addingFor === storeKey ? (
                       <AddCreditsForm
                         storeName={store.storeName}
@@ -601,6 +648,30 @@ export default function AdminPanel() {
                       >
                         <Plus className="w-4 h-4 mr-1" /> Add Credits
                       </Button>
+                    )}
+
+                    {/* WhatsApp Notify Button */}
+                    {store.phone ? (
+                      <a
+                        href={`https://wa.me/91${store.phone}?text=Dear%20Store%20Owner%2C%20your%20recharge%20is%20completed.%20Your%20account%20is%20now%20active.`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full h-9 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
+                        data-ocid={`admin.secondary_button.${rowNum}` as string}
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        WhatsApp Notify
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="flex items-center justify-center gap-2 w-full h-9 rounded-lg bg-gray-200 text-gray-400 text-sm font-medium cursor-not-allowed"
+                        title="No phone number on file"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        WhatsApp Notify
+                      </button>
                     )}
                   </CardContent>
                 </Card>
