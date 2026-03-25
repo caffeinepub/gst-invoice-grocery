@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LineItem, UserProfile } from "../backend.d";
+import type { LineItem, Product, UserProfile } from "../backend.d";
 import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
@@ -218,12 +218,28 @@ export function useCreateInvoice() {
       lineItems: LineItem[];
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.createInvoice(
+      const invoice = await actor.createInvoice(
         data.customerName,
         data.customerGstin,
         data.isIgst,
         data.lineItems,
       );
+      // Deduct stock for each line item
+      const cachedProducts = qc.getQueryData<Product[]>(["products"]) || [];
+      for (const item of data.lineItems) {
+        const product = cachedProducts.find((p) => p.sku === item.productId);
+        if (product) {
+          const newQty = BigInt(
+            Math.max(0, Number(product.stockQty) - Number(item.qty)),
+          );
+          try {
+            await actor.updateProductStock(item.productId, newQty);
+          } catch {
+            // stock update failure is non-critical
+          }
+        }
+      }
+      return invoice;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });

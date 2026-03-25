@@ -523,20 +523,43 @@ export default function NewInvoice() {
                             <TableCell className="text-muted-foreground text-sm">
                               {item.product.hsnCode}
                             </TableCell>
-                            <TableCell className="w-24">
-                              <Input
-                                type="number"
-                                min="1"
-                                value={item.qty}
-                                onChange={(e) =>
-                                  updateQty(
-                                    item.product.sku,
-                                    Number.parseInt(e.target.value) || 1,
-                                  )
-                                }
-                                className="w-16 text-center h-8 text-sm"
-                                data-ocid="invoice.input"
-                              />
+                            <TableCell className="w-32">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateQty(
+                                      item.product.sku,
+                                      Math.max(1, item.qty - 1),
+                                    )
+                                  }
+                                  className="w-7 h-7 rounded bg-muted text-foreground text-lg font-bold flex items-center justify-center select-none"
+                                >
+                                  −
+                                </button>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.qty}
+                                  onChange={(e) =>
+                                    updateQty(
+                                      item.product.sku,
+                                      Number.parseInt(e.target.value) || 1,
+                                    )
+                                  }
+                                  className="w-12 text-center h-7 text-sm p-0"
+                                  data-ocid="invoice.input"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateQty(item.product.sku, item.qty + 1)
+                                  }
+                                  className="w-7 h-7 rounded bg-muted text-foreground text-lg font-bold flex items-center justify-center select-none"
+                                >
+                                  +
+                                </button>
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               {fmt(item.product.price)}
