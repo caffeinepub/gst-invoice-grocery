@@ -25,6 +25,7 @@ import {
   Plus,
   Printer,
   Save,
+  ScanLine,
   ShoppingCart,
   Smartphone,
   Trash2,
@@ -33,6 +34,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { LineItem, Product } from "../backend.d";
+import BarcodeScanner from "../components/BarcodeScanner";
 import ThermalReceipt from "../components/ThermalReceipt";
 import type { InvoiceLineItemDisplay } from "../components/ThermalReceipt";
 import {
@@ -80,6 +82,7 @@ export default function NewInvoice() {
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedSku, setSelectedSku] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerGstin, setCustomerGstin] = useState("");
   const [isIgst, setIsIgst] = useState(false);
@@ -112,6 +115,24 @@ export default function NewInvoice() {
       return [...prev, { product, qty: 1 }];
     });
     setSelectedSku("");
+  };
+
+  const addByBarcode = (barcode: string) => {
+    const product = products.find((p) => p.sku === barcode);
+    if (!product) {
+      toast.error(`No product found with barcode/SKU: ${barcode}`);
+      return;
+    }
+    setCart((prev) => {
+      const existing = prev.find((i) => i.product.sku === barcode);
+      if (existing) {
+        return prev.map((i) =>
+          i.product.sku === barcode ? { ...i, qty: i.qty + 1 } : i,
+        );
+      }
+      return [...prev, { product, qty: 1 }];
+    });
+    toast.success(`Added: ${product.name}`);
   };
 
   const updateQty = (sku: string, qty: number) => {
@@ -468,9 +489,23 @@ export default function NewInvoice() {
                 >
                   <Plus className="w-4 h-4 mr-1" /> Add
                 </Button>
+                <Button
+                  onClick={() => setScannerOpen(true)}
+                  variant="outline"
+                  className="border-saffron text-saffron hover:bg-saffron/10"
+                  title="Scan barcode"
+                >
+                  <ScanLine className="w-4 h-4" />
+                </Button>
               </div>
             </CardContent>
           </Card>
+
+          <BarcodeScanner
+            open={scannerOpen}
+            onClose={() => setScannerOpen(false)}
+            onDetected={addByBarcode}
+          />
 
           {/* Items Table */}
           <Card className="shadow-card border-border">

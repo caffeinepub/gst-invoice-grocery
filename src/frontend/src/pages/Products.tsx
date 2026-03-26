@@ -206,7 +206,7 @@ export default function Products() {
                       Product Name
                     </TableHead>
                     <TableHead>HSN Code</TableHead>
-                    <TableHead>SKU</TableHead>
+                    <TableHead>SKU / Barcode</TableHead>
                     <TableHead className="text-right">MRP (₹)</TableHead>
                     <TableHead className="text-center">GST %</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
@@ -322,7 +322,12 @@ export default function Products() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="p-sku">SKU *</Label>
+                <Label htmlFor="p-sku">
+                  SKU / Barcode *{" "}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (enter product barcode for scanning)
+                  </span>
+                </Label>
                 <Input
                   id="p-sku"
                   value={form.sku}
