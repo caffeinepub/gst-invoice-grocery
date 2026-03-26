@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Keyboard, ScanLine, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -22,95 +23,132 @@ export default function BarcodeScanner({
   onDetected,
 }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animFrameRef = useRef<number>(0);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const nativeAnimRef = useRef<number>(0);
+  const nativeDetectorRef = useRef<unknown>(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
-  const [supported, setSupported] = useState(true);
 
   const stopCamera = useCallback(() => {
-    cancelAnimationFrame(animFrameRef.current);
-    if (streamRef.current) {
-      for (const t of streamRef.current.getTracks()) {
-        t.stop();
-      }
-      streamRef.current = null;
+    // Stop ZXing reader
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch (_) {}
+      controlsRef.current = null;
     }
+    // Stop native BarcodeDetector loop
+    cancelAnimationFrame(nativeAnimRef.current);
+    nativeDetectorRef.current = null;
   }, []);
 
   const startCamera = useCallback(async () => {
     setError("");
     setScanning(true);
+
+    // @ts-ignore
+    const hasNativeDetector = "BarcodeDetector" in window;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      // @ts-ignore - BarcodeDetector may not be in TS types
-      if (!("BarcodeDetector" in window)) {
-        setSupported(false);
-        setManualMode(true);
-        stopCamera();
-        return;
-      }
-
-      // @ts-ignore
-      const detector = new window.BarcodeDetector({
-        formats: [
-          "ean_13",
-          "ean_8",
-          "code_128",
-          "code_39",
-          "qr_code",
-          "upc_a",
-          "upc_e",
-          "itf",
-        ],
-      });
-
-      const detect = async () => {
-        if (!videoRef.current || videoRef.current.readyState < 2) {
-          animFrameRef.current = requestAnimationFrame(detect);
-          return;
+      if (hasNativeDetector) {
+        // Use native BarcodeDetector (Chrome Android / Chrome desktop)
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
         }
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            stopCamera();
-            setScanning(false);
-            onDetected(code);
-            onClose();
+        // @ts-ignore
+        const detector = new window.BarcodeDetector({
+          formats: [
+            "ean_13",
+            "ean_8",
+            "code_128",
+            "code_39",
+            "qr_code",
+            "upc_a",
+            "upc_e",
+            "itf",
+          ],
+        });
+        nativeDetectorRef.current = detector;
+
+        const detect = async () => {
+          if (!nativeDetectorRef.current) return;
+          if (!videoRef.current || videoRef.current.readyState < 2) {
+            nativeAnimRef.current = requestAnimationFrame(detect);
             return;
           }
-        } catch (_) {}
-        animFrameRef.current = requestAnimationFrame(detect);
-      };
-      animFrameRef.current = requestAnimationFrame(detect);
+          try {
+            // @ts-ignore
+            const barcodes = await detector.detect(videoRef.current);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              // stop stream
+              for (const t of stream.getTracks()) t.stop();
+              nativeDetectorRef.current = null;
+              setScanning(false);
+              onDetected(code);
+              onClose();
+              return;
+            }
+          } catch (_) {}
+          nativeAnimRef.current = requestAnimationFrame(detect);
+        };
+        nativeAnimRef.current = requestAnimationFrame(detect);
+      } else {
+        // Use ZXing (iOS Safari, iOS Chrome, Firefox, etc.)
+        const reader = new BrowserMultiFormatReader();
+        if (!videoRef.current) return;
+
+        const controls = await reader.decodeFromConstraints(
+          {
+            video: {
+              facingMode: "environment",
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+          },
+          videoRef.current,
+          (result, err) => {
+            if (result) {
+              const code = result.getText();
+              controls.stop();
+              controlsRef.current = null;
+              setScanning(false);
+              onDetected(code);
+              onClose();
+            }
+            // suppress errors - they fire continuously when no barcode is in frame
+            void err;
+          },
+        );
+        controlsRef.current = controls;
+      }
     } catch (e: unknown) {
       setScanning(false);
       const msg = e instanceof Error ? e.message : "";
-      if (msg.includes("Permission") || msg.includes("NotAllowed")) {
+      if (
+        msg.includes("Permission") ||
+        msg.includes("NotAllowed") ||
+        msg.includes("denied")
+      ) {
         setError(
-          "Camera permission denied. Please allow camera access and try again.",
+          "Camera permission denied. Please allow camera access in your browser settings and try again.",
         );
       } else {
         setError("Could not access camera. Use manual entry below.");
       }
       setManualMode(true);
     }
-  }, [stopCamera, onDetected, onClose]);
+  }, [onDetected, onClose]);
 
   useEffect(() => {
     if (open && !manualMode) {
@@ -155,16 +193,15 @@ export default function BarcodeScanner({
               className="w-full h-full object-cover"
               playsInline
               muted
+              autoPlay
             />
             {/* Scanning overlay */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              {/* Corner brackets */}
               <div className="relative w-56 h-36">
                 <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-saffron rounded-tl" />
                 <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-saffron rounded-tr" />
                 <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-saffron rounded-bl" />
                 <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-saffron rounded-br" />
-                {/* Scanning line animation */}
                 <div
                   className="absolute left-2 right-2 h-0.5 bg-saffron opacity-80"
                   style={{
@@ -177,7 +214,6 @@ export default function BarcodeScanner({
                 {scanning ? "Point camera at barcode" : "Starting camera..."}
               </p>
             </div>
-
             <button
               type="button"
               onClick={onClose}
@@ -191,13 +227,6 @@ export default function BarcodeScanner({
         {error && (
           <div className="mx-4 mt-2 text-sm text-red-500 bg-red-50 rounded px-3 py-2">
             {error}
-          </div>
-        )}
-
-        {!supported && (
-          <div className="mx-4 mt-2 text-sm text-amber-700 bg-amber-50 rounded px-3 py-2">
-            Barcode scanner not supported in this browser. Please use Chrome on
-            Android for camera scanning, or type the barcode below.
           </div>
         )}
 
@@ -234,20 +263,18 @@ export default function BarcodeScanner({
                   OK
                 </Button>
               </div>
-              {!!supported && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={() => {
-                    setManualMode(false);
-                    setError("");
-                    startCamera();
-                  }}
-                >
-                  <ScanLine className="w-4 h-4" /> Use camera instead
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                onClick={() => {
+                  setManualMode(false);
+                  setError("");
+                  startCamera();
+                }}
+              >
+                <ScanLine className="w-4 h-4" /> Use camera instead
+              </Button>
             </div>
           )}
         </div>
