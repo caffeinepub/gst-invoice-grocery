@@ -4,7 +4,7 @@ import { useActor } from "./useActor";
 import { useInternetIdentity } from "./useInternetIdentity";
 
 const FIXED_ADMIN_PRINCIPALS = [
-  "f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe",
+  "k7q4h-llwfx-fmjb6-2hec6-mapys-s3muh-hc5ce-3s223-qukvo-twmiy-mae",
 ];
 
 const DATA_QUERY_DEFAULTS = {
