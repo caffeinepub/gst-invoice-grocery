@@ -210,8 +210,8 @@ export default function NewInvoice() {
       setCustomerGstin("");
       setIsIgst(false);
       setPaymentMode("Cash");
-    } catch {
-      toast.error("Failed to save invoice. Please try again.");
+    } catch (e) {
+      toast.error(`Failed to save invoice: ${String(e)}`);
     }
   };
 

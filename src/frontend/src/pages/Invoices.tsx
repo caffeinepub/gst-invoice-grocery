@@ -471,119 +471,211 @@ export default function Invoices() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table data-ocid="invoices.table">
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead className="text-center">Type</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead className="text-right">Grand Total</TableHead>
-                      <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <AnimatePresence>
-                      {filtered.map((inv, i) => (
-                        <motion.tr
-                          key={inv.invoiceNumber.toString()}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="border-b border-border hover:bg-muted/30 transition-colors"
-                          data-ocid={`invoices.item.${i + 1}`}
-                        >
-                          <TableCell className="font-mono font-medium text-blue">
-                            #{inv.invoiceNumber.toString()}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {new Date(
-                              Number(inv.date) / 1_000_000,
-                            ).toLocaleDateString("en-IN")}
-                          </TableCell>
-                          <TableCell>
-                            {inv.customerName || (
-                              <span className="text-muted-foreground italic text-sm">
-                                Walk-in
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
+              <>
+                {/* Mobile card list */}
+                <div className="md:hidden divide-y divide-border">
+                  {filtered.map((inv, i) => (
+                    <div
+                      key={inv.invoiceNumber.toString()}
+                      className="p-4"
+                      data-ocid={`invoices.item.${i + 1}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-blue text-sm">
+                              #{inv.invoiceNumber.toString()}
+                            </span>
                             <Badge
                               className={
                                 inv.isIgst
-                                  ? "bg-blue-light text-blue border-0"
-                                  : "bg-teal-light text-teal border-0"
+                                  ? "bg-blue-light text-blue border-0 text-xs"
+                                  : "bg-teal-light text-teal border-0 text-xs"
                               }
                             >
                               {inv.isIgst ? "IGST" : "CGST+SGST"}
                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm">
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {new Date(
+                              Number(inv.date) / 1_000_000,
+                            ).toLocaleDateString("en-IN")}
+                            {inv.customerName && (
+                              <span> · {inv.customerName}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
                             {inv.lineItems.length} item(s)
-                          </TableCell>
-                          <TableCell className="text-right font-bold">
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-bold text-sm">
                             {fmt(inv.grandTotal)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              {/* View */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setViewInvoice(inv)}
-                                className="h-8 w-8 p-0"
-                                title="View"
-                                data-ocid={`invoices.edit_button.${i + 1}`}
+                          </div>
+                          <div className="flex items-center gap-1 mt-2 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setViewInvoice(inv)}
+                              className="h-8 w-8 p-0"
+                              title="View"
+                              data-ocid={`invoices.edit_button.${i + 1}`}
+                            >
+                              <Eye className="w-4 h-4 text-teal" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                printTriggered.current = false;
+                                setPrintInvoice(inv);
+                              }}
+                              className="h-8 w-8 p-0"
+                              title="Print"
+                              data-ocid={`invoices.print_button.${i + 1}`}
+                            >
+                              <Printer className="w-4 h-4 text-green-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEdit(inv)}
+                              className="h-8 w-8 p-0"
+                              title="Edit"
+                              data-ocid={`invoices.save_button.${i + 1}`}
+                            >
+                              <Pencil className="w-4 h-4 text-indigo-500" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteTarget(inv)}
+                              className="h-8 w-8 p-0"
+                              title="Delete"
+                              data-ocid={`invoices.delete_button.${i + 1}`}
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <Table data-ocid="invoices.table">
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead className="text-center">Type</TableHead>
+                        <TableHead>Items</TableHead>
+                        <TableHead className="text-right">
+                          Grand Total
+                        </TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <AnimatePresence>
+                        {filtered.map((inv, i) => (
+                          <motion.tr
+                            key={inv.invoiceNumber.toString()}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="border-b border-border hover:bg-muted/30 transition-colors"
+                            data-ocid={`invoices.item.${i + 1}`}
+                          >
+                            <TableCell className="font-mono font-medium text-blue">
+                              #{inv.invoiceNumber.toString()}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {new Date(
+                                Number(inv.date) / 1_000_000,
+                              ).toLocaleDateString("en-IN")}
+                            </TableCell>
+                            <TableCell>
+                              {inv.customerName || (
+                                <span className="text-muted-foreground italic text-sm">
+                                  Walk-in
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge
+                                className={
+                                  inv.isIgst
+                                    ? "bg-blue-light text-blue border-0"
+                                    : "bg-teal-light text-teal border-0"
+                                }
                               >
-                                <Eye className="w-4 h-4 text-teal" />
-                              </Button>
-                              {/* Print */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  printTriggered.current = false;
-                                  setPrintInvoice(inv);
-                                }}
-                                className="h-8 w-8 p-0"
-                                title="Print"
-                                data-ocid={`invoices.print_button.${i + 1}`}
-                              >
-                                <Printer className="w-4 h-4 text-green-600" />
-                              </Button>
-                              {/* Edit */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEdit(inv)}
-                                className="h-8 w-8 p-0"
-                                title="Edit"
-                                data-ocid={`invoices.save_button.${i + 1}`}
-                              >
-                                <Pencil className="w-4 h-4 text-indigo-500" />
-                              </Button>
-                              {/* Delete */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteTarget(inv)}
-                                className="h-8 w-8 p-0"
-                                title="Delete"
-                                data-ocid={`invoices.delete_button.${i + 1}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-red-500" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </motion.tr>
-                      ))}
-                    </AnimatePresence>
-                  </TableBody>
-                </Table>
-              </div>
+                                {inv.isIgst ? "IGST" : "CGST+SGST"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {inv.lineItems.length} item(s)
+                            </TableCell>
+                            <TableCell className="text-right font-bold">
+                              {fmt(inv.grandTotal)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setViewInvoice(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="View"
+                                  data-ocid={`invoices.edit_button.${i + 1}`}
+                                >
+                                  <Eye className="w-4 h-4 text-teal" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    printTriggered.current = false;
+                                    setPrintInvoice(inv);
+                                  }}
+                                  className="h-8 w-8 p-0"
+                                  title="Print"
+                                  data-ocid={`invoices.print_button.${i + 1}`}
+                                >
+                                  <Printer className="w-4 h-4 text-green-600" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openEdit(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="Edit"
+                                  data-ocid={`invoices.save_button.${i + 1}`}
+                                >
+                                  <Pencil className="w-4 h-4 text-indigo-500" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleteTarget(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="Delete"
+                                  data-ocid={`invoices.delete_button.${i + 1}`}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </motion.tr>
+                        ))}
+                      </AnimatePresence>
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

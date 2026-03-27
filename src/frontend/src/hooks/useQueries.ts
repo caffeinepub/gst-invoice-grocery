@@ -16,20 +16,20 @@ const DATA_QUERY_DEFAULTS = {
 };
 
 export function useGetStore() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["store"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
       return await actor.getStore();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
 
 export function useGetStoreSummary() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["storeSummary"],
     queryFn: async () => {
@@ -37,39 +37,39 @@ export function useGetStoreSummary() {
       const result = await actor.getStoreSummary();
       return result;
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
 
 export function useGetProducts() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["products"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
       return await actor.getProducts();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
 
 export function useGetInvoices() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["invoices"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
       return await actor.getInvoices();
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
 
 export function useGetNextInvoiceNumber() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["nextInvoiceNumber"],
     queryFn: async () => {
@@ -80,7 +80,7 @@ export function useGetNextInvoiceNumber() {
         return 1n;
       }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
@@ -292,7 +292,7 @@ export function useUpdateInvoice() {
 }
 
 export function useGetCallerProfile() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["callerProfile"],
     queryFn: async (): Promise<UserProfile | null> => {
@@ -303,13 +303,13 @@ export function useGetCallerProfile() {
         return null;
       }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
 
 export function useGetMyCredits() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["myCredits"],
     queryFn: async (): Promise<bigint> => {
@@ -320,7 +320,7 @@ export function useGetMyCredits() {
         return 0n;
       }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
   });
 }
@@ -347,7 +347,7 @@ export function useIsCallerAdmin() {
 }
 
 export function useGetAllStoresAdmin() {
-  const { actor, isFetching } = useActor();
+  const { actor, isFetching: isLoading } = useActor();
   const { identity } = useInternetIdentity();
   const principal = identity?.getPrincipal().toString() ?? "";
 
@@ -357,7 +357,7 @@ export function useGetAllStoresAdmin() {
       if (!actor) throw new Error("Actor not ready");
       return await actor.getAllStoresAdmin();
     },
-    enabled: !!actor && !isFetching && !!principal,
+    enabled: !!actor && !isLoading && !!principal,
     ...DATA_QUERY_DEFAULTS,
   });
 }

@@ -14,12 +14,9 @@ import AccessControl "authorization/access-control";
 
 actor {
   let accessControlState = AccessControl.initState();
-  include MixinAuthorization(accessControlState);
-
-  // Preserved for stable variable compatibility with previous versions
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("k7q4h-llwfx-fmjb6-2hec6-mapys-s3muh-hc5ce-3s223-qukvo-twmiy-mae");
-  // Kept for stable variable compatibility -- no longer used for access control
   let ADMIN_PRINCIPAL_2 : Principal = Principal.fromText("ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe");
+  include MixinAuthorization(accessControlState, ADMIN_PRINCIPAL);
 
   func isAdminCaller(caller : Principal) : Bool {
     caller == ADMIN_PRINCIPAL or AccessControl.isAdmin(accessControlState, caller);

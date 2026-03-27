@@ -1,8 +1,9 @@
 import AccessControl "./access-control";
 import Prim "mo:prim";
 import Runtime "mo:core/Runtime";
+import Principal "mo:core/Principal";
 
-mixin (accessControlState : AccessControl.AccessControlState) {
+mixin (accessControlState : AccessControl.AccessControlState, extraAdminPrincipal : Principal) {
   // Initialize auth (first caller becomes admin, others become users)
   public shared ({ caller }) func _initializeAccessControlWithSecret(userSecret : Text) : async () {
     switch (Prim.envVar<system>("CAFFEINE_ADMIN_TOKEN")) {
@@ -25,6 +26,6 @@ mixin (accessControlState : AccessControl.AccessControlState) {
   };
 
   public query ({ caller }) func isCallerAdmin() : async Bool {
-    AccessControl.isAdmin(accessControlState, caller);
+    caller == extraAdminPrincipal or AccessControl.isAdmin(accessControlState, caller);
   };
 };

@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BrowserMultiFormatReader } from "@zxing/browser";
 import { Keyboard, ScanLine, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -23,48 +22,48 @@ export default function BarcodeScanner({
   onDetected,
 }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<{ stop: () => void } | null>(null);
   const nativeAnimRef = useRef<number>(0);
   const nativeDetectorRef = useRef<unknown>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
 
   const stopCamera = useCallback(() => {
-    // Stop ZXing reader
-    if (controlsRef.current) {
-      try {
-        controlsRef.current.stop();
-      } catch (_) {}
-      controlsRef.current = null;
-    }
-    // Stop native BarcodeDetector loop
     cancelAnimationFrame(nativeAnimRef.current);
     nativeDetectorRef.current = null;
+    if (streamRef.current) {
+      for (const t of streamRef.current.getTracks()) t.stop();
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   }, []);
 
   const startCamera = useCallback(async () => {
     setError("");
     setScanning(true);
 
-    // @ts-ignore
-    const hasNativeDetector = "BarcodeDetector" in window;
-
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      // @ts-ignore
+      const hasNativeDetector = "BarcodeDetector" in window;
+
       if (hasNativeDetector) {
-        // Use native BarcodeDetector (Chrome Android / Chrome desktop)
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
         // @ts-ignore
         const detector = new window.BarcodeDetector({
           formats: [
@@ -91,9 +90,7 @@ export default function BarcodeScanner({
             const barcodes = await detector.detect(videoRef.current);
             if (barcodes.length > 0) {
               const code = barcodes[0].rawValue;
-              // stop stream
-              for (const t of stream.getTracks()) t.stop();
-              nativeDetectorRef.current = null;
+              stopCamera();
               setScanning(false);
               onDetected(code);
               onClose();
@@ -104,33 +101,36 @@ export default function BarcodeScanner({
         };
         nativeAnimRef.current = requestAnimationFrame(detect);
       } else {
-        // Use ZXing (iOS Safari, iOS Chrome, Firefox, etc.)
-        const reader = new BrowserMultiFormatReader();
-        if (!videoRef.current) return;
-
-        const controls = await reader.decodeFromConstraints(
-          {
-            video: {
-              facingMode: "environment",
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
+        // No native BarcodeDetector (iOS Safari, Firefox) -- try ZXing via dynamic script load
+        const zxingAvailable = await loadZxing();
+        if (zxingAvailable && videoRef.current) {
+          // @ts-ignore
+          const reader = new window.ZXing.BrowserMultiFormatReader();
+          reader.decodeFromStream(
+            stream,
+            videoRef.current,
+            (result: unknown, err: unknown) => {
+              if (result) {
+                // @ts-ignore
+                const code = result.getText();
+                reader.reset();
+                stopCamera();
+                setScanning(false);
+                onDetected(code);
+                onClose();
+              }
+              void err;
             },
-          },
-          videoRef.current,
-          (result, err) => {
-            if (result) {
-              const code = result.getText();
-              controls.stop();
-              controlsRef.current = null;
-              setScanning(false);
-              onDetected(code);
-              onClose();
-            }
-            // suppress errors - they fire continuously when no barcode is in frame
-            void err;
-          },
-        );
-        controlsRef.current = controls;
+          );
+        } else {
+          // Fallback: manual mode
+          stopCamera();
+          setScanning(false);
+          setError(
+            "Camera scanning not supported on this browser. Please type the barcode manually.",
+          );
+          setManualMode(true);
+        }
       }
     } catch (e: unknown) {
       setScanning(false);
@@ -148,7 +148,7 @@ export default function BarcodeScanner({
       }
       setManualMode(true);
     }
-  }, [onDetected, onClose]);
+  }, [onDetected, onClose, stopCamera]);
 
   useEffect(() => {
     if (open && !manualMode) {
@@ -288,4 +288,23 @@ export default function BarcodeScanner({
       </DialogContent>
     </Dialog>
   );
+}
+
+// Dynamically load ZXing from CDN for browsers without native BarcodeDetector
+let zxingPromise: Promise<boolean> | null = null;
+function loadZxing(): Promise<boolean> {
+  if (zxingPromise) return zxingPromise;
+  zxingPromise = new Promise((resolve) => {
+    // @ts-ignore
+    if (window.ZXing) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/@zxing/browser@0.1.4/umd/index.min.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return zxingPromise;
 }
