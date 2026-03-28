@@ -16,7 +16,7 @@ actor {
   let accessControlState = AccessControl.initState();
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("k7q4h-llwfx-fmjb6-2hec6-mapys-s3muh-hc5ce-3s223-qukvo-twmiy-mae");
   let ADMIN_PRINCIPAL_2 : Principal = Principal.fromText("ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe");
-  include MixinAuthorization(accessControlState, ADMIN_PRINCIPAL);
+  include MixinAuthorization(accessControlState);
 
   func isAdminCaller(caller : Principal) : Bool {
     caller == ADMIN_PRINCIPAL or AccessControl.isAdmin(accessControlState, caller);
@@ -304,7 +304,7 @@ actor {
     existingInvoices.add(invoiceNumber, invoice);
     invoices.add(caller, existingInvoices);
     nextInvoiceNumber.add(caller, invoiceNumber + 1);
-    credits.add(caller, currentCredits - 1);
+    credits.add(caller, if (currentCredits > 0) { currentCredits - 1 } else { 0 });
     invoice;
   };
 

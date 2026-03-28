@@ -76,6 +76,7 @@ type PaymentMode = "Cash" | "Card" | "UPI";
 
 export default function NewInvoice() {
   const { data: products = [] } = useGetProducts();
+  const inStockProducts = products.filter((p) => Number(p.stockQty) > 0);
   const { data: store } = useGetStore();
   const { data: nextInvNo } = useGetNextInvoiceNumber();
   const createMutation = useCreateInvoice();
@@ -121,6 +122,10 @@ export default function NewInvoice() {
     const product = products.find((p) => p.sku === barcode);
     if (!product) {
       toast.error(`No product found with barcode/SKU: ${barcode}`);
+      return;
+    }
+    if (Number(product.stockQty) <= 0) {
+      toast.error(`${product.name} is out of stock`);
       return;
     }
     setCart((prev) => {
@@ -467,12 +472,12 @@ export default function NewInvoice() {
                     <SelectValue placeholder="Select a product..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {products.length === 0 ? (
+                    {inStockProducts.length === 0 ? (
                       <SelectItem value="none" disabled>
                         No products available
                       </SelectItem>
                     ) : (
-                      products.map((p) => (
+                      inStockProducts.map((p) => (
                         <SelectItem key={p.sku} value={p.sku}>
                           {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} (GST:{" "}
                           {p.gstRate.toString()}%)
