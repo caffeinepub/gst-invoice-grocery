@@ -14,7 +14,7 @@ import AccessControl "authorization/access-control";
 
 actor {
   let accessControlState = AccessControl.initState();
-  let ADMIN_PRINCIPAL : Principal = Principal.fromText("k7q4h-llwfx-fmjb6-2hec6-mapys-s3muh-hc5ce-3s223-qukvo-twmiy-mae");
+  let ADMIN_PRINCIPAL : Principal = Principal.fromText("f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe");
   let ADMIN_PRINCIPAL_2 : Principal = Principal.fromText("ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe");
   include MixinAuthorization(accessControlState);
 
