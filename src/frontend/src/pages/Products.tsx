@@ -28,10 +28,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Edit2, Loader2, Package, Plus, Search, Trash2 } from "lucide-react";
+import {
+  Download,
+  Edit2,
+  FileSpreadsheet,
+  Loader2,
+  Package,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 import type { Product } from "../backend.d";
 import {
   useAddProduct,
@@ -60,6 +71,46 @@ const emptyForm: ProductForm = {
   stockQty: "0",
 };
 
+interface ImportRow {
+  name: string;
+  sku: string;
+  price: number;
+  stockQty: number;
+  hsnCode: string;
+  gstRate: number;
+  error?: string;
+}
+
+function parseExcelRows(data: unknown[][]): ImportRow[] {
+  const validGst = [0, 5, 12, 18, 28];
+  return data
+    .filter((row) => row && row.length >= 2 && String(row[0] ?? "").trim())
+    .map((row) => {
+      const name = String(row[0] ?? "").trim();
+      const sku = String(row[1] ?? "").trim();
+      const price = Number(row[2] ?? 0);
+      const stockQty = Number(row[3] ?? 0);
+      const hsnCode = String(row[4] ?? "").trim();
+      const gstRateRaw = Number(row[5] ?? 5);
+      const gstRate = validGst.includes(gstRateRaw) ? gstRateRaw : 5;
+
+      let error: string | undefined;
+      if (!name) error = "Name missing";
+      else if (!sku) error = "Barcode missing";
+      else if (Number.isNaN(price) || price <= 0) error = "Invalid MRP";
+
+      return {
+        name,
+        sku,
+        price,
+        stockQty: Number.isNaN(stockQty) ? 0 : stockQty,
+        hsnCode,
+        gstRate,
+        error,
+      };
+    });
+}
+
 export default function Products() {
   const { data: products = [], isLoading } = useGetProducts();
   const addMutation = useAddProduct();
@@ -71,6 +122,17 @@ export default function Products() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Import state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importRows, setImportRows] = useState<ImportRow[]>([]);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importProgress, setImportProgress] = useState<{
+    done: number;
+    total: number;
+    errors: number;
+  } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const filtered = products.filter(
     (p) =>
@@ -141,6 +203,104 @@ export default function Products() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+          header: 1,
+        }) as unknown[][];
+        // Skip header row
+        const rows = raw.slice(1);
+        const parsed = parseExcelRows(rows);
+        if (parsed.length === 0) {
+          toast.error("No valid rows found in file.");
+          return;
+        }
+        setImportRows(parsed);
+        setImportProgress(null);
+        setImportDialogOpen(true);
+      } catch {
+        toast.error("Could not read file. Please use the sample template.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset input
+    e.target.value = "";
+  };
+
+  const handleImport = async () => {
+    const validRows = importRows.filter((r) => !r.error);
+    if (validRows.length === 0) {
+      toast.error("No valid rows to import.");
+      return;
+    }
+    setImporting(true);
+    setImportProgress({ done: 0, total: validRows.length, errors: 0 });
+    let errors = 0;
+    for (let i = 0; i < validRows.length; i++) {
+      const row = validRows[i];
+      try {
+        await addMutation.mutateAsync({
+          name: row.name,
+          hsnCode: row.hsnCode,
+          sku: row.sku,
+          price: BigInt(Math.round(row.price * 100)),
+          gstRate: BigInt(row.gstRate),
+          stockQty: BigInt(row.stockQty),
+        });
+      } catch {
+        errors++;
+      }
+      setImportProgress({ done: i + 1, total: validRows.length, errors });
+    }
+    setImporting(false);
+    if (errors === 0) {
+      toast.success(`${validRows.length} products imported successfully!`);
+    } else {
+      toast.warning(
+        `Import done: ${validRows.length - errors} added, ${errors} failed (duplicate barcode?).`,
+      );
+    }
+    setImportDialogOpen(false);
+    setImportRows([]);
+    setImportProgress(null);
+  };
+
+  const downloadTemplate = () => {
+    const headers = [
+      [
+        "Product Name",
+        "Barcode (SKU)",
+        "MRP (₹)",
+        "Stock Qty",
+        "HSN Code",
+        "GST Rate (0/5/12/18/28)",
+      ],
+    ];
+    const sample = [
+      ["Basmati Rice 1kg", "RICE001", 120, 50, "1006", 5],
+      ["Atta 5kg", "ATTA001", 250, 30, "1101", 5],
+      ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...sample]);
+    ws["!cols"] = [
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 24 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, "product_import_template.xlsx");
+  };
+
   const isPending = addMutation.isPending || updateMutation.isPending;
 
   return (
@@ -156,17 +316,39 @@ export default function Products() {
             <CardTitle className="text-lg font-semibold">
               Product Catalog
             </CardTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search products..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-8 w-52 bg-card"
+                  className="pl-8 w-44 bg-card"
                   data-ocid="products.search_input"
                 />
               </div>
+              <Button
+                variant="outline"
+                onClick={downloadTemplate}
+                className="text-green-700 border-green-300 hover:bg-green-50"
+                title="Download sample Excel template"
+              >
+                <Download className="w-4 h-4 mr-1" /> Template
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-blue-700 border-blue-300 hover:bg-blue-50"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-1" /> Import Excel
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleFileChange}
+              />
               <Button
                 onClick={openAdd}
                 className="bg-saffron hover:bg-saffron-dark text-white"
@@ -284,6 +466,142 @@ export default function Products() {
           )}
         </CardContent>
       </Card>
+
+      {/* Import Preview Dialog */}
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(o) => {
+          if (!importing) {
+            setImportDialogOpen(o);
+          }
+        }}
+      >
+        <DialogContent
+          className="max-w-2xl w-full"
+          data-ocid="products.import_dialog"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              Import Products from Excel
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="text-sm text-muted-foreground mb-2">
+            {importRows.filter((r) => !r.error).length} valid rows ready to
+            import
+            {importRows.filter((r) => r.error).length > 0 && (
+              <span className="text-destructive ml-2">
+                · {importRows.filter((r) => r.error).length} rows have errors
+                (will be skipped)
+              </span>
+            )}
+          </div>
+
+          {importProgress && (
+            <div className="mb-3 p-3 rounded-lg bg-muted">
+              <div className="flex justify-between text-sm mb-1">
+                <span>
+                  Importing... {importProgress.done} / {importProgress.total}
+                </span>
+                {importProgress.errors > 0 && (
+                  <span className="text-destructive">
+                    {importProgress.errors} failed
+                  </span>
+                )}
+              </div>
+              <div className="w-full bg-border rounded-full h-2">
+                <div
+                  className="bg-saffron h-2 rounded-full transition-all"
+                  style={{
+                    width: `${(importProgress.done / importProgress.total) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-72 overflow-y-auto border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>#</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Barcode</TableHead>
+                  <TableHead className="text-right">MRP</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>HSN</TableHead>
+                  <TableHead>GST</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {importRows.map((row, i) => (
+                  <TableRow
+                    key={`${row.sku}-${row.name}-${i}`}
+                    className={row.error ? "bg-red-50" : ""}
+                  >
+                    <TableCell className="text-muted-foreground">
+                      {i + 1}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {row.name || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {row.sku || "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      ₹{row.price.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">{row.stockQty}</TableCell>
+                    <TableCell>{row.hsnCode || "—"}</TableCell>
+                    <TableCell>{row.gstRate}%</TableCell>
+                    <TableCell>
+                      {row.error ? (
+                        <span className="text-xs text-destructive">
+                          {row.error}
+                        </span>
+                      ) : (
+                        <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                          OK
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={
+                importing || importRows.filter((r) => !r.error).length === 0
+              }
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" /> Import{" "}
+                  {importRows.filter((r) => !r.error).length} Products
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

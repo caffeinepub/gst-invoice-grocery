@@ -1,24 +1,29 @@
 # GST Invoice - Grocery
 
 ## Current State
-App has 6 pages: Dashboard, Store Setup, Products, New Invoice, Invoices, Admin Panel. Bottom nav and desktop nav show these pages. App has saffron + indigo theme, developer credit footer.
+Products page has Add/Edit/Delete per product. No bulk import functionality.
 
 ## Requested Changes (Diff)
 
 ### Add
-- New `HelpSupport.tsx` page accessible via a "Help" tab in the bottom nav and desktop nav
-- Page sections:
-  1. **Technology Used** -- Internet Computer (ICP) blockchain, Motoko backend, React + TypeScript frontend, Tailwind CSS, 80mm thermal printing via window.print()
-  2. **How to Use This App** -- Step-by-step guide: Login with Internet Identity, set up store details, add products, create invoices, print receipts, manage via admin panel
-  3. **Why Choose BillKaro** -- GST-compliant, no internet server downtime risk (blockchain), data fully owned by you, mobile-first, free to start
-  4. **Help & Support** -- WhatsApp button linking to +917023285769, 24x7 service label, phone call link
+- Excel/CSV import button on Products page
+- File input accepting .xlsx and .csv files
+- Parse columns: Name, Barcode (SKU), MRP, Qty (Stock), HSN, GST Rate
+- Preview table showing parsed rows before importing
+- Bulk addProduct calls for all valid rows
+- Download sample template button (.xlsx with correct column headers)
+- Error summary if some rows fail (e.g. duplicate SKU)
 
 ### Modify
-- `App.tsx`: Add `HelpSupport` tab to `BASE_TABS` with a HelpCircle icon, import and render the new page
+- Products page header: add Import Excel button alongside Add Product
 
 ### Remove
 - Nothing removed
 
 ## Implementation Plan
-1. Create `src/frontend/src/pages/HelpSupport.tsx` with all four sections
-2. Add Help tab to BASE_TABS in App.tsx and render HelpSupport page
+1. Install xlsx (SheetJS) package in frontend
+2. Add ImportProducts component inside Products.tsx
+3. File input triggers xlsx parse -> show preview dialog with row table
+4. On confirm, loop through rows calling addProduct mutation
+5. Show progress (X/Y imported) and final success/error count
+6. Sample template download: generate a simple xlsx with header row
