@@ -61,47 +61,49 @@ export default function BarcodeScanner({
   const nativeDetectorRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const zxingReaderRef = useRef<any>(null);
+  const html5QrRef = useRef<any>(null);
 
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
+  // Track which render path is active so the correct DOM element is rendered
+  // before html5-qrcode tries to mount into it.
+  const [useHtml5Path, setUseHtml5Path] = useState(false);
 
-  const stopCamera = useCallback(() => {
-    // Stop native BarcodeDetector animation loop
+  // ── stopCamera ─────────────────────────────────────────────────────────────
+  const stopCamera = useCallback(async () => {
     cancelAnimationFrame(nativeAnimRef.current);
     nativeDetectorRef.current = null;
 
-    // Stop manually-acquired stream (native path)
     if (streamRef.current) {
       for (const t of streamRef.current.getTracks()) t.stop();
       streamRef.current = null;
     }
 
-    // Stop ZXing reader (it manages its own stream)
-    if (zxingReaderRef.current) {
+    // html5-qrcode stop (async)
+    if (html5QrRef.current) {
       try {
-        zxingReaderRef.current.reset();
+        await html5QrRef.current.stop();
       } catch (_) {}
-      zxingReaderRef.current = null;
+      html5QrRef.current = null;
     }
 
-    // Clear video element
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
   }, []);
 
+  // ── startCamera ────────────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
     setError("");
-    setScanning(true);
+    setScanning(false);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hasNativeDetector = "BarcodeDetector" in window;
 
     if (hasNativeDetector) {
-      // ── Native BarcodeDetector (Android Chrome, Desktop Chrome/Edge) ────────
+      // ── Native BarcodeDetector (Android Chrome, Desktop Chrome/Edge) ────
+      setUseHtml5Path(false);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -130,6 +132,7 @@ export default function BarcodeScanner({
           ],
         });
         nativeDetectorRef.current = detector;
+        setScanning(true);
 
         const detect = async () => {
           if (!nativeDetectorRef.current) return;
@@ -143,7 +146,7 @@ export default function BarcodeScanner({
             if (barcodes.length > 0) {
               playBeep();
               const code = barcodes[0].rawValue;
-              stopCamera();
+              await stopCamera();
               setScanning(false);
               onDetected(code);
               onClose();
@@ -170,11 +173,12 @@ export default function BarcodeScanner({
         setManualMode(true);
       }
     } else {
-      // ── ZXing fallback (iOS Safari, iOS Chrome, Firefox) ──────────────────
-      // decodeFromConstraints is the iOS-compatible path — ZXing manages the
-      // media stream internally, avoiding the iOS quirks with srcObject + play().
-      const zxingAvailable = await loadZxing();
-      if (!zxingAvailable || !videoRef.current) {
+      // ── html5-qrcode fallback (iOS Safari, iOS Chrome, Firefox) ──────────
+      // html5-qrcode works natively on iOS and doesn't require BarcodeDetector.
+      setUseHtml5Path(true);
+
+      const available = await loadHtml5Qrcode();
+      if (!available) {
         setScanning(false);
         setError(
           "Camera scanning not supported on this browser. Please type the barcode manually.",
@@ -183,40 +187,38 @@ export default function BarcodeScanner({
         return;
       }
 
-      try {
-        // @ts-ignore
-        const reader = new window.ZXing.BrowserMultiFormatReader();
-        zxingReaderRef.current = reader;
+      // Wait for React to re-render the div#html5-qrcode-region into the DOM
+      await new Promise<void>((r) => setTimeout(r, 150));
 
-        // decodeFromConstraints handles getUserMedia + video setup internally.
-        // On iOS Safari this is more reliable than manually calling getUserMedia.
-        await reader.decodeFromConstraints(
-          {
-            video: {
-              // ideal allows iOS to fall back if environment camera unavailable
-              facingMode: { ideal: "environment" },
-            },
-          },
-          videoRef.current,
-          (result: unknown, err: unknown) => {
-            if (result) {
-              // @ts-ignore
-              const code = result.getText();
-              playBeep();
-              if (zxingReaderRef.current) {
-                try {
-                  zxingReaderRef.current.reset();
-                } catch (_) {}
-                zxingReaderRef.current = null;
-              }
-              setScanning(false);
-              onDetected(code);
-              onClose();
-            }
-            void err;
-          },
+      // Safety: abort if the dialog was closed while we were waiting
+      const divEl = document.getElementById("html5-qrcode-region");
+      if (!divEl) {
+        setScanning(false);
+        return;
+      }
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const html5QrCode = new (window as any).Html5Qrcode(
+          "html5-qrcode-region",
         );
-        // Promise resolves once video is playing; scanning continues via callback
+        html5QrRef.current = html5QrCode;
+
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 220, height: 130 },
+          },
+          (decodedText: string) => {
+            playBeep();
+            void stopCamera();
+            setScanning(false);
+            onDetected(decodedText);
+            onClose();
+          },
+          undefined, // per-frame error callback (ignore)
+        );
         setScanning(true);
       } catch (e: unknown) {
         setScanning(false);
@@ -237,22 +239,25 @@ export default function BarcodeScanner({
     }
   }, [onDetected, onClose, stopCamera]);
 
+  // Start camera when dialog opens
   useEffect(() => {
     if (open && !manualMode) {
-      startCamera();
+      void startCamera();
     }
     return () => {
-      if (!open) stopCamera();
+      if (!open) void stopCamera();
     };
   }, [open, manualMode, startCamera, stopCamera]);
 
+  // Full reset when dialog closes
   useEffect(() => {
     if (!open) {
-      stopCamera();
+      void stopCamera();
       setScanning(false);
       setManualBarcode("");
       setError("");
       setManualMode(false);
+      setUseHtml5Path(false);
     }
   }, [open, stopCamera]);
 
@@ -273,17 +278,38 @@ export default function BarcodeScanner({
           </DialogTitle>
         </DialogHeader>
 
-        {!manualMode ? (
-          <div className="relative bg-black" style={{ aspectRatio: "4/3" }}>
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              playsInline
-              muted
-              autoPlay
-            />
-            {/* Scanning overlay */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        {!manualMode && (
+          <div
+            className="relative bg-black overflow-hidden"
+            style={{ aspectRatio: "4/3" }}
+          >
+            {/* Native BarcodeDetector path — own <video> element */}
+            {!useHtml5Path && (
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+                autoPlay
+              />
+            )}
+
+            {/* html5-qrcode path — mounts its own <video> inside this div */}
+            {useHtml5Path && (
+              <div
+                id="html5-qrcode-region"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  background: "black",
+                }}
+              />
+            )}
+
+            {/* Scanning overlay — sits above both paths */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
               <div className="relative w-56 h-36">
                 <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-saffron rounded-tl" />
                 <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-saffron rounded-tr" />
@@ -301,15 +327,16 @@ export default function BarcodeScanner({
                 {scanning ? "Point camera at barcode" : "Starting camera..."}
               </p>
             </div>
+
             <button
               type="button"
               onClick={onClose}
-              className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"
+              className="absolute top-2 right-2 z-20 bg-black/50 text-white rounded-full p-1"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        ) : null}
+        )}
 
         {error && (
           <div className="mx-4 mt-2 text-sm text-red-500 bg-red-50 rounded px-3 py-2">
@@ -324,7 +351,7 @@ export default function BarcodeScanner({
               size="sm"
               className="w-full gap-2"
               onClick={() => {
-                stopCamera();
+                void stopCamera();
                 setManualMode(true);
               }}
             >
@@ -357,7 +384,7 @@ export default function BarcodeScanner({
                 onClick={() => {
                   setManualMode(false);
                   setError("");
-                  startCamera();
+                  void startCamera();
                 }}
               >
                 <ScanLine className="w-4 h-4" /> Use camera instead
@@ -371,27 +398,42 @@ export default function BarcodeScanner({
             0%, 100% { transform: translateY(-16px); }
             50% { transform: translateY(16px); }
           }
+          /* Force html5-qrcode video to fill its container */
+          #html5-qrcode-region video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            position: absolute !important;
+            top: 0;
+            left: 0;
+          }
+          /* Hide html5-qrcode's built-in controls we don't need */
+          #html5-qrcode-region > img { display: none !important; }
+          #html5-qrcode-region__header_message { display: none !important; }
         `}</style>
       </DialogContent>
     </Dialog>
   );
 }
 
-// Dynamically load ZXing from CDN for browsers without native BarcodeDetector
-let zxingPromise: Promise<boolean> | null = null;
-function loadZxing(): Promise<boolean> {
-  if (zxingPromise) return zxingPromise;
-  zxingPromise = new Promise((resolve) => {
-    // @ts-ignore
-    if (window.ZXing) {
+// ── CDN loader for html5-qrcode (iOS-compatible barcode scanning) ─────────────
+let html5QrPromise: Promise<boolean> | null = null;
+
+function loadHtml5Qrcode(): Promise<boolean> {
+  if (html5QrPromise) return html5QrPromise;
+  html5QrPromise = new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).Html5Qrcode) {
       resolve(true);
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://unpkg.com/@zxing/browser@0.1.4/umd/index.min.js";
-    script.onload = () => resolve(true);
+    script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    script.onload = () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resolve(typeof (window as any).Html5Qrcode !== "undefined");
     script.onerror = () => resolve(false);
     document.head.appendChild(script);
   });
-  return zxingPromise;
+  return html5QrPromise;
 }

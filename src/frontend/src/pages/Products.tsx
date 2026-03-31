@@ -42,7 +42,6 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import type { Product } from "../backend.d";
 import {
   useAddProduct,
@@ -109,6 +108,25 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
         error,
       };
     });
+}
+
+// ── CDN loader for xlsx (not in package.json; loaded on demand) ──────────────
+let xlsxPromise: Promise<boolean> | null = null;
+function loadXlsx(): Promise<boolean> {
+  if (xlsxPromise) return xlsxPromise;
+  xlsxPromise = new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).XLSX) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return xlsxPromise;
 }
 
 export default function Products() {
@@ -203,17 +221,24 @@ export default function Products() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const ok = await loadXlsx();
+    if (!ok) {
+      toast.error(
+        "Could not load Excel library. Check your internet connection.",
+      );
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const XLS = (window as any).XLSX;
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(evt.target?.result, { type: "binary" });
+        const wb = XLS.read(evt.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json<unknown[]>(ws, {
-          header: 1,
-        }) as unknown[][];
+        const raw = XLS.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
         // Skip header row
         const rows = raw.slice(1);
         const parsed = parseExcelRows(rows);
@@ -271,7 +296,16 @@ export default function Products() {
     setImportProgress(null);
   };
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    const ok = await loadXlsx();
+    if (!ok) {
+      toast.error(
+        "Could not load Excel library. Check your internet connection.",
+      );
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const XLS = (window as any).XLSX;
     const headers = [
       [
         "Product Name",
@@ -287,7 +321,7 @@ export default function Products() {
       ["Atta 5kg", "ATTA001", 250, 30, "1101", 5],
       ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0],
     ];
-    const ws = XLSX.utils.aoa_to_sheet([...headers, ...sample]);
+    const ws = XLS.utils.aoa_to_sheet([...headers, ...sample]);
     ws["!cols"] = [
       { wch: 22 },
       { wch: 16 },
@@ -296,9 +330,9 @@ export default function Products() {
       { wch: 12 },
       { wch: 24 },
     ];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Products");
-    XLSX.writeFile(wb, "product_import_template.xlsx");
+    const wb = XLS.utils.book_new();
+    XLS.utils.book_append_sheet(wb, ws, "Products");
+    XLS.writeFile(wb, "product_import_template.xlsx");
   };
 
   const isPending = addMutation.isPending || updateMutation.isPending;

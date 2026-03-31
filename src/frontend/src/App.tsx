@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
+import ShyamaChatbot from "./components/ShyamaChatbot";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetMyCredits, useIsCallerAdmin } from "./hooks/useQueries";
 import AdminPanel from "./pages/AdminPanel";
@@ -301,6 +302,9 @@ export default function App() {
           </a>
         </div>
       </footer>
+
+      {/* Shyama Chatbot — visible for all logged-in users */}
+      {isLoggedIn && <ShyamaChatbot />}
     </div>
   );
 }
