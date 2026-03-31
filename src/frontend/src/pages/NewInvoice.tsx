@@ -34,7 +34,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { LineItem, Product } from "../backend.d";
-import BarcodeScanner from "../components/BarcodeScanner";
+import BarcodeScanner, { unlockAudio } from "../components/BarcodeScanner";
 import ThermalReceipt from "../components/ThermalReceipt";
 import type { InvoiceLineItemDisplay } from "../components/ThermalReceipt";
 import {
@@ -495,7 +495,10 @@ export default function NewInvoice() {
                   <Plus className="w-4 h-4 mr-1" /> Add
                 </Button>
                 <Button
-                  onClick={() => setScannerOpen(true)}
+                  onClick={() => {
+                    unlockAudio();
+                    setScannerOpen(true);
+                  }}
                   variant="outline"
                   className="border-saffron text-saffron hover:bg-saffron/10"
                   title="Scan barcode"

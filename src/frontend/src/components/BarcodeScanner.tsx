@@ -10,6 +10,41 @@ import { Label } from "@/components/ui/label";
 import { Keyboard, ScanLine, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// ── Audio helpers ─────────────────────────────────────────────────────────────
+// unlockAudio() MUST be called during a user-gesture (button click) so iOS Safari
+// allows AudioContext to play later from async scan callbacks.
+let _audioCtx: AudioContext | null = null;
+
+export function unlockAudio() {
+  try {
+    const AC =
+      window.AudioContext ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).webkitAudioContext;
+    if (!AC) return;
+    if (!_audioCtx) _audioCtx = new AC();
+    if (_audioCtx.state === "suspended") void _audioCtx.resume();
+  } catch (_) {}
+}
+
+function playBeep() {
+  try {
+    if (!_audioCtx) return;
+    if (_audioCtx.state === "suspended") void _audioCtx.resume();
+    const osc = _audioCtx.createOscillator();
+    const gain = _audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(_audioCtx.destination);
+    osc.frequency.value = 1800;
+    osc.type = "square";
+    gain.gain.setValueAtTime(0.35, _audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + 0.18);
+    osc.start(_audioCtx.currentTime);
+    osc.stop(_audioCtx.currentTime + 0.18);
+  } catch (_) {}
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface BarcodeScannerProps {
   open: boolean;
   onClose: () => void;
@@ -25,18 +60,34 @@ export default function BarcodeScanner({
   const nativeAnimRef = useRef<number>(0);
   const nativeDetectorRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const zxingReaderRef = useRef<any>(null);
+
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
 
   const stopCamera = useCallback(() => {
+    // Stop native BarcodeDetector animation loop
     cancelAnimationFrame(nativeAnimRef.current);
     nativeDetectorRef.current = null;
+
+    // Stop manually-acquired stream (native path)
     if (streamRef.current) {
       for (const t of streamRef.current.getTracks()) t.stop();
       streamRef.current = null;
     }
+
+    // Stop ZXing reader (it manages its own stream)
+    if (zxingReaderRef.current) {
+      try {
+        zxingReaderRef.current.reset();
+      } catch (_) {}
+      zxingReaderRef.current = null;
+    }
+
+    // Clear video element
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
@@ -46,24 +97,25 @@ export default function BarcodeScanner({
     setError("");
     setScanning(true);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hasNativeDetector = "BarcodeDetector" in window;
 
-      // @ts-ignore
-      const hasNativeDetector = "BarcodeDetector" in window;
+    if (hasNativeDetector) {
+      // ── Native BarcodeDetector (Android Chrome, Desktop Chrome/Edge) ────────
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
 
-      if (hasNativeDetector) {
         // @ts-ignore
         const detector = new window.BarcodeDetector({
           formats: [
@@ -89,6 +141,7 @@ export default function BarcodeScanner({
             // @ts-ignore
             const barcodes = await detector.detect(videoRef.current);
             if (barcodes.length > 0) {
+              playBeep();
               const code = barcodes[0].rawValue;
               stopCamera();
               setScanning(false);
@@ -100,53 +153,87 @@ export default function BarcodeScanner({
           nativeAnimRef.current = requestAnimationFrame(detect);
         };
         nativeAnimRef.current = requestAnimationFrame(detect);
-      } else {
-        // No native BarcodeDetector (iOS Safari, Firefox) -- try ZXing via dynamic script load
-        const zxingAvailable = await loadZxing();
-        if (zxingAvailable && videoRef.current) {
-          // @ts-ignore
-          const reader = new window.ZXing.BrowserMultiFormatReader();
-          reader.decodeFromStream(
-            stream,
-            videoRef.current,
-            (result: unknown, err: unknown) => {
-              if (result) {
-                // @ts-ignore
-                const code = result.getText();
-                reader.reset();
-                stopCamera();
-                setScanning(false);
-                onDetected(code);
-                onClose();
-              }
-              void err;
-            },
+      } catch (e: unknown) {
+        setScanning(false);
+        const msg = (e instanceof Error ? e.message : "").toLowerCase();
+        if (
+          msg.includes("permission") ||
+          msg.includes("notallowed") ||
+          msg.includes("denied")
+        ) {
+          setError(
+            "Camera permission denied. Please allow camera access in your browser settings and try again.",
           );
         } else {
-          // Fallback: manual mode
-          stopCamera();
-          setScanning(false);
-          setError(
-            "Camera scanning not supported on this browser. Please type the barcode manually.",
-          );
-          setManualMode(true);
+          setError("Could not access camera. Use manual entry below.");
         }
+        setManualMode(true);
       }
-    } catch (e: unknown) {
-      setScanning(false);
-      const msg = e instanceof Error ? e.message : "";
-      if (
-        msg.includes("Permission") ||
-        msg.includes("NotAllowed") ||
-        msg.includes("denied")
-      ) {
+    } else {
+      // ── ZXing fallback (iOS Safari, iOS Chrome, Firefox) ──────────────────
+      // decodeFromConstraints is the iOS-compatible path — ZXing manages the
+      // media stream internally, avoiding the iOS quirks with srcObject + play().
+      const zxingAvailable = await loadZxing();
+      if (!zxingAvailable || !videoRef.current) {
+        setScanning(false);
         setError(
-          "Camera permission denied. Please allow camera access in your browser settings and try again.",
+          "Camera scanning not supported on this browser. Please type the barcode manually.",
         );
-      } else {
-        setError("Could not access camera. Use manual entry below.");
+        setManualMode(true);
+        return;
       }
-      setManualMode(true);
+
+      try {
+        // @ts-ignore
+        const reader = new window.ZXing.BrowserMultiFormatReader();
+        zxingReaderRef.current = reader;
+
+        // decodeFromConstraints handles getUserMedia + video setup internally.
+        // On iOS Safari this is more reliable than manually calling getUserMedia.
+        await reader.decodeFromConstraints(
+          {
+            video: {
+              // ideal allows iOS to fall back if environment camera unavailable
+              facingMode: { ideal: "environment" },
+            },
+          },
+          videoRef.current,
+          (result: unknown, err: unknown) => {
+            if (result) {
+              // @ts-ignore
+              const code = result.getText();
+              playBeep();
+              if (zxingReaderRef.current) {
+                try {
+                  zxingReaderRef.current.reset();
+                } catch (_) {}
+                zxingReaderRef.current = null;
+              }
+              setScanning(false);
+              onDetected(code);
+              onClose();
+            }
+            void err;
+          },
+        );
+        // Promise resolves once video is playing; scanning continues via callback
+        setScanning(true);
+      } catch (e: unknown) {
+        setScanning(false);
+        const msg = (e instanceof Error ? e.message : "").toLowerCase();
+        if (
+          msg.includes("permission") ||
+          msg.includes("notallowed") ||
+          msg.includes("denied")
+        ) {
+          setError(
+            "Camera access denied. On iPhone: go to Settings → Safari → Camera and allow access, then try again.",
+          );
+        } else {
+          setError("Could not start camera. Use manual entry below.");
+        }
+        setManualMode(true);
+      }
     }
   }, [onDetected, onClose, stopCamera]);
 
