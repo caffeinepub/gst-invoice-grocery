@@ -49,6 +49,16 @@ interface CartItem {
   qty: number;
 }
 
+function isProductExpired(sku: string): boolean {
+  const dateStr = localStorage.getItem(`expiry_${sku}`) ?? "";
+  if (!dateStr) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(dateStr);
+  exp.setHours(0, 0, 0, 0);
+  return exp < today;
+}
+
 function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
   const { product, qty } = item;
   const qtyBig = BigInt(qty);
@@ -76,7 +86,9 @@ type PaymentMode = "Cash" | "Card" | "UPI";
 
 export default function NewInvoice() {
   const { data: products = [] } = useGetProducts();
-  const inStockProducts = products.filter((p) => Number(p.stockQty) > 0);
+  const inStockProducts = products.filter(
+    (p) => Number(p.stockQty) > 0 && !isProductExpired(p.sku),
+  );
   const { data: store } = useGetStore();
   const { data: nextInvNo } = useGetNextInvoiceNumber();
   const createMutation = useCreateInvoice();
@@ -126,6 +138,10 @@ export default function NewInvoice() {
     }
     if (Number(product.stockQty) <= 0) {
       toast.error(`${product.name} is out of stock`);
+      return;
+    }
+    if (isProductExpired(product.sku)) {
+      toast.error(`${product.name} has expired and cannot be added to invoice`);
       return;
     }
     setCart((prev) => {
@@ -479,8 +495,9 @@ export default function NewInvoice() {
                     ) : (
                       inStockProducts.map((p) => (
                         <SelectItem key={p.sku} value={p.sku}>
-                          {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} (GST:{" "}
-                          {p.gstRate.toString()}%)
+                          {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} |
+                          Qty: {Number(p.stockQty)} (GST: {p.gstRate.toString()}
+                          %)
                         </SelectItem>
                       ))
                     )}

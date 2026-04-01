@@ -61,6 +61,26 @@ export default function Dashboard({ onNavigate }: Props) {
   const [showLowStock, setShowLowStock] = useState(false);
   const [lowStockDismissed, setLowStockDismissed] = useState(false);
 
+  // Store logo from localStorage
+  const [storeLogo, setStoreLogo] = useState<string | null>(() =>
+    localStorage.getItem("store_logo"),
+  );
+
+  // Listen for logo updates (e.g. after store setup saves)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "store_logo") {
+        setStoreLogo(e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    // Also poll once when summary arrives (store setup might have saved logo without StorageEvent)
+    if (summary) {
+      setStoreLogo(localStorage.getItem("store_logo"));
+    }
+    return () => window.removeEventListener("storage", onStorage);
+  }, [summary]);
+
   const lowStockItems = products.filter((p) => Number(p.stockQty) < 10);
   const hasShownLowStockRef = useRef(false);
 
@@ -321,16 +341,34 @@ export default function Dashboard({ onNavigate }: Props) {
           />
         </button>
 
-        <div className="relative">
-          <p className="text-white/70 text-xs font-medium uppercase tracking-widest mb-1">
-            Welcome back
-          </p>
-          <h1 className="font-display text-2xl font-bold leading-tight">
-            {summary.storeProfile.name}
-          </h1>
-          <p className="text-white/70 text-sm mt-1">
-            {summary.storeProfile.state || "Your store overview"}
-          </p>
+        <div className="relative flex items-center gap-4">
+          {/* Store Logo */}
+          {storeLogo && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1 }}
+              className="flex-shrink-0"
+            >
+              <img
+                src={storeLogo}
+                alt="Store logo"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40 shadow-lg"
+              />
+            </motion.div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <p className="text-white/70 text-xs font-medium uppercase tracking-widest mb-1">
+              Welcome back
+            </p>
+            <h1 className="font-display text-2xl font-bold leading-tight truncate">
+              {summary.storeProfile.name}
+            </h1>
+            <p className="text-white/70 text-sm mt-1">
+              {summary.storeProfile.state || "Your store overview"}
+            </p>
+          </div>
         </div>
 
         <div className="relative mt-4 flex gap-4">

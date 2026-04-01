@@ -29,6 +29,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  AlertTriangle,
+  Calendar,
   Download,
   Edit2,
   FileSpreadsheet,
@@ -52,6 +54,49 @@ import {
 
 const GST_RATES = [0, 5, 12, 18, 28];
 
+// ── Expiry helpers ──────────────────────────────────────────────────────────
+function getExpiryKey(sku: string) {
+  return `expiry_${sku}`;
+}
+
+function getExpiry(sku: string): string {
+  return localStorage.getItem(getExpiryKey(sku)) ?? "";
+}
+
+function setExpiry(sku: string, date: string) {
+  if (date) {
+    localStorage.setItem(getExpiryKey(sku), date);
+  } else {
+    localStorage.removeItem(getExpiryKey(sku));
+  }
+}
+
+type ExpiryStatus = "expired" | "expiring" | "ok";
+
+function getExpiryStatus(dateStr: string): ExpiryStatus {
+  if (!dateStr) return "ok";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(dateStr);
+  exp.setHours(0, 0, 0, 0);
+  if (exp < today) return "expired";
+  const days30 = new Date(today);
+  days30.setDate(today.getDate() + 30);
+  if (exp <= days30) return "expiring";
+  return "ok";
+}
+
+function formatExpiryDisplay(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// ── Product form ─────────────────────────────────────────────────────────────
 interface ProductForm {
   name: string;
   hsnCode: string;
@@ -59,6 +104,7 @@ interface ProductForm {
   price: string;
   gstRate: string;
   stockQty: string;
+  expiryDate: string;
 }
 
 const emptyForm: ProductForm = {
@@ -68,6 +114,7 @@ const emptyForm: ProductForm = {
   price: "",
   gstRate: "5",
   stockQty: "0",
+  expiryDate: "",
 };
 
 interface ImportRow {
@@ -77,6 +124,7 @@ interface ImportRow {
   stockQty: number;
   hsnCode: string;
   gstRate: number;
+  expiryDate?: string;
   error?: string;
 }
 
@@ -98,6 +146,7 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
       else if (!sku) error = "Barcode missing";
       else if (Number.isNaN(price) || price <= 0) error = "Invalid MRP";
 
+      const expiryDate = row[6] ? String(row[6]).trim() : undefined;
       return {
         name,
         sku,
@@ -105,12 +154,13 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
         stockQty: Number.isNaN(stockQty) ? 0 : stockQty,
         hsnCode,
         gstRate,
+        expiryDate,
         error,
       };
     });
 }
 
-// ── CDN loader for xlsx (not in package.json; loaded on demand) ──────────────
+// ── CDN loader for xlsx ──────────────────────────────────────────────────────
 let xlsxPromise: Promise<boolean> | null = null;
 function loadXlsx(): Promise<boolean> {
   if (xlsxPromise) return xlsxPromise;
@@ -127,6 +177,25 @@ function loadXlsx(): Promise<boolean> {
     document.head.appendChild(script);
   });
   return xlsxPromise;
+}
+
+// ── Expiry Badge component ───────────────────────────────────────────────────
+function ExpiryBadge({ status }: { status: ExpiryStatus }) {
+  if (status === "expired") {
+    return (
+      <Badge className="bg-red-100 text-red-700 border-red-200 text-xs px-1.5 py-0">
+        Expired
+      </Badge>
+    );
+  }
+  if (status === "expiring") {
+    return (
+      <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs px-1.5 py-0">
+        Expiring Soon
+      </Badge>
+    );
+  }
+  return null;
 }
 
 export default function Products() {
@@ -152,7 +221,23 @@ export default function Products() {
   } | null>(null);
   const [importing, setImporting] = useState(false);
 
-  const filtered = products.filter(
+  // Attach expiry info and sort: expired → expiring → ok
+  const productsWithExpiry = products
+    .map((p) => {
+      const expiryDate = getExpiry(p.sku);
+      const expiryStatus = getExpiryStatus(expiryDate);
+      return { ...p, expiryDate, expiryStatus };
+    })
+    .sort((a, b) => {
+      const order: Record<ExpiryStatus, number> = {
+        expired: 0,
+        expiring: 1,
+        ok: 2,
+      };
+      return order[a.expiryStatus] - order[b.expiryStatus];
+    });
+
+  const filtered = productsWithExpiry.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
@@ -174,6 +259,7 @@ export default function Products() {
       price: (Number(p.price) / 100).toFixed(2),
       gstRate: p.gstRate.toString(),
       stockQty: p.stockQty.toString(),
+      expiryDate: getExpiry(p.sku),
     });
     setDialogOpen(true);
   };
@@ -181,6 +267,7 @@ export default function Products() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const pricePaise = BigInt(Math.round(Number.parseFloat(form.price) * 100));
+    const sku = editProduct ? editProduct.sku : form.sku;
     try {
       if (editProduct) {
         await updateMutation.mutateAsync({
@@ -203,6 +290,8 @@ export default function Products() {
         });
         toast.success("Product added!");
       }
+      // Save expiry date to localStorage
+      setExpiry(sku, form.expiryDate);
       setDialogOpen(false);
     } catch {
       toast.error("Failed to save product.");
@@ -213,6 +302,8 @@ export default function Products() {
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync(deleteTarget);
+      // Clean up expiry from localStorage
+      localStorage.removeItem(getExpiryKey(deleteTarget));
       toast.success("Product deleted.");
     } catch {
       toast.error("Failed to delete product.");
@@ -278,6 +369,9 @@ export default function Products() {
           gstRate: BigInt(row.gstRate),
           stockQty: BigInt(row.stockQty),
         });
+        if (row.expiryDate) {
+          setExpiry(row.sku, row.expiryDate);
+        }
       } catch {
         errors++;
       }
@@ -314,12 +408,13 @@ export default function Products() {
         "Stock Qty",
         "HSN Code",
         "GST Rate (0/5/12/18/28)",
+        "Expiry Date (YYYY-MM-DD)",
       ],
     ];
     const sample = [
-      ["Basmati Rice 1kg", "RICE001", 120, 50, "1006", 5],
-      ["Atta 5kg", "ATTA001", 250, 30, "1101", 5],
-      ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0],
+      ["Basmati Rice 1kg", "RICE001", 120, 50, "1006", 5, "2026-12-31"],
+      ["Atta 5kg", "ATTA001", 250, 30, "1101", 5, "2026-06-30"],
+      ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0, ""],
     ];
     const ws = XLS.utils.aoa_to_sheet([...headers, ...sample]);
     ws["!cols"] = [
@@ -329,6 +424,7 @@ export default function Products() {
       { wch: 10 },
       { wch: 12 },
       { wch: 24 },
+      { wch: 22 },
     ];
     const wb = XLS.utils.book_new();
     XLS.utils.book_append_sheet(wb, ws, "Products");
@@ -337,6 +433,14 @@ export default function Products() {
 
   const isPending = addMutation.isPending || updateMutation.isPending;
 
+  // Counts for header badges
+  const expiredCount = productsWithExpiry.filter(
+    (p) => p.expiryStatus === "expired",
+  ).length;
+  const expiringCount = productsWithExpiry.filter(
+    (p) => p.expiryStatus === "expiring",
+  ).length;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -344,6 +448,33 @@ export default function Products() {
       className="space-y-4"
       data-ocid="products.section"
     >
+      {/* Expiry alert banner */}
+      {(expiredCount > 0 || expiringCount > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800 flex flex-wrap gap-x-4 gap-y-1">
+            {expiredCount > 0 && (
+              <span>
+                <span className="font-bold text-red-600">{expiredCount}</span>{" "}
+                product{expiredCount > 1 ? "s" : ""} expired
+              </span>
+            )}
+            {expiringCount > 0 && (
+              <span>
+                <span className="font-bold text-amber-700">
+                  {expiringCount}
+                </span>{" "}
+                product{expiringCount > 1 ? "s" : ""} expiring within 30 days
+              </span>
+            )}
+          </div>
+        </motion.div>
+      )}
+
       <Card className="shadow-card border-border">
         <CardHeader className="border-b border-border pb-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -426,73 +557,111 @@ export default function Products() {
                     <TableHead className="text-right">MRP (₹)</TableHead>
                     <TableHead className="text-center">GST %</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-center">Expiry</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <AnimatePresence>
-                    {filtered.map((p, i) => (
-                      <motion.tr
-                        key={p.sku}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="border-b border-border hover:bg-muted/30 transition-colors"
-                        data-ocid={`products.item.${i + 1}`}
-                      >
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {p.hsnCode}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className="font-mono text-xs"
-                          >
-                            {p.sku}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          ₹{(Number(p.price) / 100).toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className="bg-saffron-light text-saffron-dark border-0">
-                            {p.gstRate.toString()}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span
-                            className={
-                              Number(p.stockQty) < 10
-                                ? "text-destructive font-medium"
-                                : ""
-                            }
-                          >
-                            {p.stockQty.toString()}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEdit(p)}
-                              data-ocid={`products.edit_button.${i + 1}`}
+                    {filtered.map((p, i) => {
+                      const isExpiredRow = p.expiryStatus === "expired";
+                      const isExpiringRow = p.expiryStatus === "expiring";
+                      return (
+                        <motion.tr
+                          key={p.sku}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className={`border-b border-border transition-colors ${
+                            isExpiredRow
+                              ? "bg-red-50 hover:bg-red-100/60"
+                              : isExpiringRow
+                                ? "bg-amber-50 hover:bg-amber-100/60"
+                                : "hover:bg-muted/30"
+                          }`}
+                          data-ocid={`products.item.${i + 1}`}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{p.name}</span>
+                              <ExpiryBadge status={p.expiryStatus} />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {p.hsnCode}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-xs"
                             >
-                              <Edit2 className="w-4 h-4 text-indigo" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteTarget(p.sku)}
-                              data-ocid={`products.delete_button.${i + 1}`}
+                              {p.sku}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            ₹{(Number(p.price) / 100).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className="bg-saffron-light text-saffron-dark border-0">
+                              {p.gstRate.toString()}%
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={
+                                Number(p.stockQty) < 10
+                                  ? "text-destructive font-medium"
+                                  : ""
+                              }
                             >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </motion.tr>
-                    ))}
+                              {p.stockQty.toString()}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {p.expiryDate ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <span
+                                  className={`text-xs font-medium ${
+                                    isExpiredRow
+                                      ? "text-red-600"
+                                      : isExpiringRow
+                                        ? "text-amber-600"
+                                        : "text-muted-foreground"
+                                  }`}
+                                >
+                                  <Calendar className="w-3 h-3 inline mr-0.5 mb-0.5" />
+                                  {formatExpiryDisplay(p.expiryDate)}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/50">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEdit(p)}
+                                data-ocid={`products.edit_button.${i + 1}`}
+                              >
+                                <Edit2 className="w-4 h-4 text-indigo" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteTarget(p.sku)}
+                                data-ocid={`products.delete_button.${i + 1}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </motion.tr>
+                      );
+                    })}
                   </AnimatePresence>
                 </TableBody>
               </Table>
@@ -566,6 +735,9 @@ export default function Products() {
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead>HSN</TableHead>
                   <TableHead>GST</TableHead>
+                  {importRows.some((r) => r.expiryDate) && (
+                    <TableHead>Expiry</TableHead>
+                  )}
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -590,6 +762,11 @@ export default function Products() {
                     <TableCell className="text-right">{row.stockQty}</TableCell>
                     <TableCell>{row.hsnCode || "—"}</TableCell>
                     <TableCell>{row.gstRate}%</TableCell>
+                    {importRows.some((r) => r.expiryDate) && (
+                      <TableCell className="text-xs">
+                        {row.expiryDate || "—"}
+                      </TableCell>
+                    )}
                     <TableCell>
                       {row.error ? (
                         <span className="text-xs text-destructive">
@@ -677,7 +854,7 @@ export default function Products() {
                 <Label htmlFor="p-sku">
                   SKU / Barcode *{" "}
                   <span className="text-xs text-muted-foreground font-normal">
-                    (enter product barcode for scanning)
+                    (scan barcode)
                   </span>
                 </Label>
                 <Input
@@ -741,6 +918,42 @@ export default function Products() {
                   required
                   data-ocid="products.input"
                 />
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="p-expiry" className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                  Expiry Date
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  id="p-expiry"
+                  type="date"
+                  value={form.expiryDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, expiryDate: e.target.value }))
+                  }
+                  data-ocid="products.input"
+                />
+                {form.expiryDate && (
+                  <p
+                    className={`text-xs ${
+                      getExpiryStatus(form.expiryDate) === "expired"
+                        ? "text-red-600"
+                        : getExpiryStatus(form.expiryDate) === "expiring"
+                          ? "text-amber-600"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {getExpiryStatus(form.expiryDate) === "expired" &&
+                      "⚠ This product has already expired"}
+                    {getExpiryStatus(form.expiryDate) === "expiring" &&
+                      "⚠ This product expires within 30 days"}
+                    {getExpiryStatus(form.expiryDate) === "ok" &&
+                      `Expires: ${formatExpiryDisplay(form.expiryDate)}`}
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter>
