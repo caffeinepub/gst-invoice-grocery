@@ -51,6 +51,21 @@ const STEPS = [
   },
   {
     step: 7,
+    title: "Scan Barcodes (Android & iPhone)",
+    desc: "On the New Bill page, tap the scan icon to open camera. Works on Android Chrome, iPhone Safari, and iPhone Chrome. Make sure camera permission is allowed in your phone settings.",
+  },
+  {
+    step: 8,
+    title: "Expiry Date Alerts on Dashboard",
+    desc: "The Dashboard shows a Product Expiry Alert section listing expired and soon-to-expire products (within 30 days) with barcode/SKU and remaining stock. Tap 'Go to Products' to update them.",
+  },
+  {
+    step: 9,
+    title: "Download Invoices as ZIP",
+    desc: "On the Invoices page, set a date range and tap 'Download ZIP' to download all invoices in that period as individual HTML files in a single zip archive.",
+  },
+  {
+    step: 10,
     title: "Admin Panel (Admin Only)",
     desc: "Admin can activate new store accounts, add recharge credits, search stores, and send WhatsApp notifications from the Admin tab.",
   },
@@ -124,6 +139,11 @@ const REASONS = [
     icon: "🆓",
     title: "Free to Start",
     desc: "Activate your account and start billing — no upfront cost required to try the app.",
+  },
+  {
+    icon: "📦",
+    title: "Expiry Date Tracking",
+    desc: "Track product expiry dates with visual alerts on the dashboard — expired items shown in red, soon-expiring in amber.",
   },
 ];
 

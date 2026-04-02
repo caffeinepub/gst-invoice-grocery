@@ -1,20 +1,25 @@
 # GST Invoice - Grocery
 
 ## Current State
-Full GST invoicing app with barcode scanning (Android + iOS fallback via ZXing CDN), admin panel, products, thermal print animation, and Help & Support page. The barcode scanner component (`BarcodeScanner.tsx`) currently loads `@zxing/browser@0.1.4` from unpkg CDN and calls `window.ZXing.BrowserMultiFormatReader` — but that package's UMD global is `ZXingBrowser`, not `ZXing`, causing the iOS path to fail silently (ZXing never loads correctly). App theme is saffron + indigo.
+App is live with Dashboard, Products, Invoices, StoreSetup, Admin, Help pages. Dashboard shows store logo with a rounded box shape. No expiry product list on dashboard. Invoices page has CSV export but no ZIP download. BarcodeScanner uses html5-qrcode via CDN script tag (unreliable on iOS Chrome). Help page has 7 steps with current features.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Shyama Chatbot** (`ShyamaChatbot.tsx`): floating chat button (bottom-right, above mobile nav) with saffron/indigo gradient avatar icon themed to match BillKaro. Opens a sliding chat panel. Contains a comprehensive keyword-based Q&A knowledge base covering: how to use the app, why to use BillKaro, menu navigation (all tabs explained), how to generate first invoice step-by-step, app benefits, how to use the printer / thermal print animation, barcode scanning, product management, admin panel, credits/recharge, stock management, customer details, Excel import. Each answer should include a speak button (🔊) that uses `window.speechSynthesis` to read the answer aloud. The chatbot should also have a "Speak" mode toggle button that auto-reads every response. Include suggested quick-tap questions so users don't have to type. The chatbot should show a typing indicator before responding. Knowledge base should be comprehensive (~15-20 Q&A entries at minimum). The floating button shows "Shyama" name label on hover. Integrate into `App.tsx` — show when user is logged in (both active and inactive).
+- Dashboard: expiry + upcoming expiry products section (within 30 days) showing product name, barcode/SKU, and remaining qty, with color-coded badges (red=expired, amber=expiring soon)
+- Invoices: "Download ZIP" button that uses JSZip to create a zip file containing one HTML receipt file per invoice between the selected dates
+- Help page: new steps/entries for barcode scanning, expiry tracking, and ZIP invoice download
 
 ### Modify
-- **BarcodeScanner.tsx**: Fix iOS scanning. Replace the CDN `@zxing/browser` (broken UMD namespace) with `html5-qrcode@2.3.8` from CDN (`https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js`). The `html5-qrcode` library exports `window.Html5Qrcode` globally and has native iOS Safari support. Restructure the ZXing fallback path to use `Html5Qrcode` with a div container (not video element). For browsers without native `BarcodeDetector`, use `Html5Qrcode` with `{ facingMode: "environment" }`. Keep the native BarcodeDetector path for Android Chrome as-is (it works). Keep the beep sound and manual entry fallback. Remove `@zxing/browser` CDN loader, replace with `html5-qrcode` loader.
+- Dashboard: store logo should display with no background shape/border — just a transparent img with `object-contain` (remove `rounded-2xl border-2 border-white/40 shadow-lg` classes)
+- BarcodeScanner: replace CDN-loaded html5-qrcode with direct npm import `import { Html5Qrcode } from 'html5-qrcode'` for reliability on iOS Chrome/Safari
+- Help page: update step count and add descriptions for new features
 
 ### Remove
-- Nothing removed
+- BarcodeScanner: remove CDN loader function `loadHtml5Qrcode()` and the `<script>` injection approach
 
 ## Implementation Plan
-1. Fix `BarcodeScanner.tsx`: Replace ZXing CDN with html5-qrcode CDN. In the ZXing fallback path, use `Html5Qrcode` instance with a div element (`id="html5-qrcode-region"`). Use `html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 150 } }, callback)` to start scanning. On success call beep + onDetected. On stop/unmount call `html5QrCode.stop()`. Show the scanning overlay on top of the div region.
-2. Create `ShyamaChatbot.tsx` with full knowledge base, quick questions, speak functionality, typing indicator, saffron/indigo themed floating button.
-3. Import and render `ShyamaChatbot` in `App.tsx` when logged in.
+1. Update Dashboard.tsx: remove logo shape styling, add expiry products card
+2. Update BarcodeScanner.tsx: import Html5Qrcode from npm, remove CDN loader
+3. Update Invoices.tsx: add JSZip import, add handleExportZip function, add ZIP button next to CSV button
+4. Update HelpSupport.tsx: add new steps and feature entries

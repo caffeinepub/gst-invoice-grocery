@@ -111,6 +111,7 @@ export default function Invoices() {
   const [editState, setEditState] = useState<EditState | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [zipLoading, setZipLoading] = useState(false);
   const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null);
   const printTriggered = useRef(false);
 
@@ -268,6 +269,58 @@ export default function Invoices() {
       exportToCsv(`invoice_items_${fromStr}_to_${toStr}.csv`, lineRows);
     }
   };
+  const handleExportZip = async () => {
+    if (filtered.length === 0) return;
+    setZipLoading(true);
+    try {
+      const JSZipLib = (await import("jszip")).default;
+      const zip = new JSZipLib();
+      for (const inv of filtered) {
+        const dateStr = new Date(
+          Number(inv.date) / 1_000_000,
+        ).toLocaleDateString("en-IN");
+        const customer = inv.customerName || "Walk-in";
+        const items = inv.lineItems
+          .map(
+            (item) => `
+          <tr>
+            <td>${item.productName}</td>
+            <td>${item.hsnCode}</td>
+            <td>${Number(item.qty)}</td>
+            <td>₹${(Number(item.rate) / 100).toFixed(2)}</td>
+            <td>${Number(item.gstRate)}%</td>
+            <td>₹${(Number(item.lineTotal) / 100).toFixed(2)}</td>
+          </tr>`,
+          )
+          .join("");
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice #${inv.invoiceNumber}</title>
+          <style>body{font-family:Arial,sans-serif;font-size:12px;padding:16px}h2{margin:0}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px;text-align:left}th{background:#f5f5f5}.total{font-weight:bold}</style></head>
+          <body>
+          <h2>TAX INVOICE #${inv.invoiceNumber}</h2>
+          <p>Date: ${dateStr} | Customer: ${customer} | GST Type: ${inv.isIgst ? "IGST" : "CGST+SGST"}</p>
+          <table><thead><tr><th>Product</th><th>HSN</th><th>Qty</th><th>Rate</th><th>GST%</th><th>Total</th></tr></thead>
+          <tbody>${items}</tbody></table>
+          <p class="total">Grand Total: ₹${(Number(inv.grandTotal) / 100).toFixed(2)}</p>
+          <p>CGST: ₹${(Number(inv.totalCgst) / 100).toFixed(2)} | SGST: ₹${(Number(inv.totalSgst) / 100).toFixed(2)} | IGST: ₹${(Number(inv.totalIgst) / 100).toFixed(2)}</p>
+          </body></html>`;
+        zip.file(
+          `invoice_${inv.invoiceNumber}_${dateStr.replace(/\//g, "-")}.html`,
+          html,
+        );
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const fromStr = dateFrom || "all";
+      const toStr = dateTo || "all";
+      a.download = `invoices_${fromStr}_to_${toStr}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setZipLoading(false);
+    }
+  };
 
   // Build receipt props for print invoice
   const printReceiptProps = printInvoice
@@ -405,6 +458,20 @@ export default function Invoices() {
                   data-ocid="invoices.export_button"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleExportZip}
+                  disabled={filtered.length === 0 || zipLoading}
+                  className="bg-indigo hover:bg-indigo-dark text-white h-8 px-3 text-xs font-semibold"
+                  data-ocid="invoices.zip_button"
+                >
+                  {zipLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  Download ZIP
                 </Button>
               </div>
             </div>

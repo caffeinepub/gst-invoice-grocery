@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Html5Qrcode } from "html5-qrcode";
 import { Keyboard, ScanLine, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -60,8 +61,7 @@ export default function BarcodeScanner({
   const nativeAnimRef = useRef<number>(0);
   const nativeDetectorRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const html5QrRef = useRef<any>(null);
+  const html5QrRef = useRef<Html5Qrcode | null>(null);
 
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
@@ -174,21 +174,11 @@ export default function BarcodeScanner({
       }
     } else {
       // ── html5-qrcode fallback (iOS Safari, iOS Chrome, Firefox) ──────────
-      // html5-qrcode works natively on iOS and doesn't require BarcodeDetector.
+      // html5-qrcode npm package works natively on iOS.
       setUseHtml5Path(true);
 
-      const available = await loadHtml5Qrcode();
-      if (!available) {
-        setScanning(false);
-        setError(
-          "Camera scanning not supported on this browser. Please type the barcode manually.",
-        );
-        setManualMode(true);
-        return;
-      }
-
       // Wait for React to re-render the div#html5-qrcode-region into the DOM
-      await new Promise<void>((r) => setTimeout(r, 150));
+      await new Promise<void>((r) => setTimeout(r, 300));
 
       // Safety: abort if the dialog was closed while we were waiting
       const divEl = document.getElementById("html5-qrcode-region");
@@ -198,10 +188,7 @@ export default function BarcodeScanner({
       }
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const html5QrCode = new (window as any).Html5Qrcode(
-          "html5-qrcode-region",
-        );
+        const html5QrCode = new Html5Qrcode("html5-qrcode-region");
         html5QrRef.current = html5QrCode;
 
         await html5QrCode.start(
@@ -414,26 +401,4 @@ export default function BarcodeScanner({
       </DialogContent>
     </Dialog>
   );
-}
-
-// ── CDN loader for html5-qrcode (iOS-compatible barcode scanning) ─────────────
-let html5QrPromise: Promise<boolean> | null = null;
-
-function loadHtml5Qrcode(): Promise<boolean> {
-  if (html5QrPromise) return html5QrPromise;
-  html5QrPromise = new Promise((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((window as any).Html5Qrcode) {
-      resolve(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
-    script.onload = () =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      resolve(typeof (window as any).Html5Qrcode !== "undefined");
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-  return html5QrPromise;
 }
