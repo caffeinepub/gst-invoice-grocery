@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -39,8 +40,11 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { Invoice, LineItem } from "../backend.d";
+import ManagerPinDialog from "../components/ManagerPinDialog";
 import ThermalReceipt, { invoiceToDisplay } from "../components/ThermalReceipt";
+import { hasManagerPin } from "../hooks/useManagerMode";
 import {
   useDeleteInvoice,
   useGetInvoices,
@@ -77,6 +81,25 @@ function exportToCsv(
   URL.revokeObjectURL(url);
 }
 
+// CDN loader for JSZip (not in package.json, loaded on demand)
+let jsZipPromise: Promise<boolean> | null = null;
+function loadJSZip(): Promise<boolean> {
+  if (jsZipPromise) return jsZipPromise;
+  jsZipPromise = new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).JSZip) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return jsZipPromise;
+}
 function recalcLineItem(item: LineItem, isIgst: boolean): LineItem {
   const base = item.qty * item.rate;
   let cgstAmt = 0n;
@@ -115,6 +138,21 @@ export default function Invoices() {
   const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null);
   const printTriggered = useRef(false);
 
+  // ── Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<bigint>>(new Set());
+
+  // ── PIN gate states
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinDialogTitle, setPinDialogTitle] = useState("");
+  const [pendingAction, setPendingAction] = useState<
+    | { type: "single-delete"; invoice: Invoice }
+    | { type: "single-edit"; invoice: Invoice }
+    | { type: "bulk-delete" }
+    | null
+  >(null);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   const logoUrl = localStorage.getItem("store_logo") ?? undefined;
 
   // Trigger actual print after animation
@@ -126,7 +164,6 @@ export default function Invoices() {
     const timer = setTimeout(() => {
       if (!printTriggered.current) {
         printTriggered.current = true;
-        // Print only the receipt content
         const receiptEl = document.getElementById("reprint-receipt-content");
         if (receiptEl) {
           const printWin = window.open("", "", "width=400,height=700");
@@ -164,10 +201,86 @@ export default function Invoices() {
     return list;
   }, [invoices, dateFrom, dateTo]);
 
+  // Select-all state
+  const allSelected =
+    filtered.length > 0 &&
+    filtered.every((inv) => selectedIds.has(inv.invoiceNumber));
+  const someSelected = selectedIds.size > 0;
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((inv) => inv.invoiceNumber)));
+    }
+  }
+
+  function toggleSelect(id: bigint) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const grandTotal = useMemo(() => {
     if (!editState) return 0n;
     return editState.lineItems.reduce((sum, item) => sum + item.lineTotal, 0n);
   }, [editState]);
+
+  // ── PIN-gated actions
+  function requestDeleteSingle(inv: Invoice) {
+    if (hasManagerPin()) {
+      setPendingAction({ type: "single-delete", invoice: inv });
+      setPinDialogTitle(
+        `Manager PIN required to delete Invoice #${inv.invoiceNumber.toString()}`,
+      );
+      setPinDialogOpen(true);
+    } else {
+      // No PIN set — go straight to confirmation
+      setDeleteTarget(inv);
+    }
+  }
+
+  function requestEditSingle(inv: Invoice) {
+    if (hasManagerPin()) {
+      setPendingAction({ type: "single-edit", invoice: inv });
+      setPinDialogTitle(
+        `Manager PIN required to edit Invoice #${inv.invoiceNumber.toString()}`,
+      );
+      setPinDialogOpen(true);
+    } else {
+      // No PIN set — go straight to edit
+      openEdit(inv);
+    }
+  }
+
+  function requestBulkDelete() {
+    if (selectedIds.size === 0) return;
+    if (hasManagerPin()) {
+      setPendingAction({ type: "bulk-delete" });
+      setPinDialogTitle(
+        `Confirm Manager PIN to delete ${selectedIds.size} invoice${selectedIds.size > 1 ? "s" : ""}`,
+      );
+      setPinDialogOpen(true);
+    } else {
+      // No PIN — go straight to bulk delete confirm
+      setBulkDeleteConfirmOpen(true);
+    }
+  }
+
+  function handlePinSuccess() {
+    if (!pendingAction) return;
+    if (pendingAction.type === "single-delete") {
+      setDeleteTarget(pendingAction.invoice);
+    } else if (pendingAction.type === "single-edit") {
+      openEdit(pendingAction.invoice);
+    } else if (pendingAction.type === "bulk-delete") {
+      setBulkDeleteConfirmOpen(true);
+    }
+    setPendingAction(null);
+  }
 
   function openEdit(inv: Invoice) {
     setEditState({
@@ -225,6 +338,31 @@ export default function Invoices() {
     }
   }
 
+  async function handleBulkDelete() {
+    setBulkDeleteConfirmOpen(false);
+    setBulkDeleting(true);
+    let failed = 0;
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await deleteMutation.mutateAsync(id);
+      } catch {
+        failed++;
+      }
+    }
+    setBulkDeleting(false);
+    setSelectedIds(new Set());
+    if (failed === 0) {
+      toast.success(
+        `${ids.length} invoice${ids.length > 1 ? "s" : ""} deleted.`,
+      );
+    } else {
+      toast.error(
+        `${failed} invoice${failed > 1 ? "s" : ""} failed to delete.`,
+      );
+    }
+  }
+
   const handleExportCsv = () => {
     if (filtered.length === 0) return;
     const summaryRows = filtered.map((inv, i) => ({
@@ -269,12 +407,20 @@ export default function Invoices() {
       exportToCsv(`invoice_items_${fromStr}_to_${toStr}.csv`, lineRows);
     }
   };
+
   const handleExportZip = async () => {
     if (filtered.length === 0) return;
     setZipLoading(true);
     try {
-      const JSZipLib = (await import("jszip")).default;
-      const zip = new JSZipLib();
+      const zipOk = await loadJSZip();
+      if (!zipOk) {
+        toast.error(
+          "Could not load ZIP library. Check your internet connection.",
+        );
+        return;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const zip = new (window as any).JSZip();
       for (const inv of filtered) {
         const dateStr = new Date(
           Number(inv.date) / 1_000_000,
@@ -322,7 +468,6 @@ export default function Invoices() {
     }
   };
 
-  // Build receipt props for print invoice
   const printReceiptProps = printInvoice
     ? {
         store: store || null,
@@ -333,6 +478,14 @@ export default function Invoices() {
 
   return (
     <>
+      {/* Manager PIN Dialog */}
+      <ManagerPinDialog
+        open={pinDialogOpen}
+        onOpenChange={setPinDialogOpen}
+        onSuccess={handlePinSuccess}
+        title={pinDialogTitle}
+      />
+
       {/* Thermal Printer Print Animation Overlay */}
       <AnimatePresence>
         {printInvoice && printReceiptProps && (
@@ -423,7 +576,6 @@ export default function Invoices() {
                     width: 302,
                   }}
                 >
-                  {/* Hidden element used for actual printing */}
                   <div id="reprint-receipt-content">
                     <ThermalReceipt {...printReceiptProps} />
                   </div>
@@ -446,7 +598,23 @@ export default function Invoices() {
               <CardTitle className="text-lg font-semibold">
                 Saved Invoices
               </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {someSelected && (
+                  <Button
+                    size="sm"
+                    onClick={requestBulkDelete}
+                    disabled={bulkDeleting}
+                    className="bg-red-600 hover:bg-red-700 text-white h-8 px-3 text-xs font-semibold"
+                    data-ocid="invoices.delete_button"
+                  >
+                    {bulkDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Delete Selected ({selectedIds.size})
+                  </Button>
+                )}
                 <Badge variant="secondary" className="text-sm">
                   {filtered.length} invoice{filtered.length !== 1 ? "s" : ""}
                 </Badge>
@@ -455,7 +623,7 @@ export default function Invoices() {
                   onClick={handleExportCsv}
                   disabled={filtered.length === 0}
                   className="bg-green-600 hover:bg-green-700 text-white h-8 px-3 text-xs font-semibold"
-                  data-ocid="invoices.export_button"
+                  data-ocid="invoices.secondary_button"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
                 </Button>
@@ -464,7 +632,7 @@ export default function Invoices() {
                   onClick={handleExportZip}
                   disabled={filtered.length === 0 || zipLoading}
                   className="bg-indigo hover:bg-indigo-dark text-white h-8 px-3 text-xs font-semibold"
-                  data-ocid="invoices.zip_button"
+                  data-ocid="invoices.secondary_button"
                 >
                   {zipLoading ? (
                     <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
@@ -486,7 +654,7 @@ export default function Invoices() {
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
                   className="h-8 text-sm w-36"
-                  data-ocid="invoices.date_from"
+                  data-ocid="invoices.input"
                 />
               </div>
               <div className="flex items-center gap-1.5">
@@ -499,7 +667,7 @@ export default function Invoices() {
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
                   className="h-8 text-sm w-36"
-                  data-ocid="invoices.date_to"
+                  data-ocid="invoices.input"
                 />
               </div>
               {(dateFrom || dateTo) && (
@@ -539,90 +707,120 @@ export default function Invoices() {
               </div>
             ) : (
               <>
+                {/* Mobile: Select all bar */}
+                <div className="md:hidden px-4 py-2 border-b border-border bg-muted/30 flex items-center gap-3">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                    data-ocid="invoices.checkbox"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {someSelected
+                      ? `${selectedIds.size} selected`
+                      : "Select all"}
+                  </span>
+                </div>
+
                 {/* Mobile card list */}
                 <div className="md:hidden divide-y divide-border">
                   {filtered.map((inv, i) => (
                     <div
                       key={inv.invoiceNumber.toString()}
-                      className="p-4"
+                      className={`p-4 transition-colors ${
+                        selectedIds.has(inv.invoiceNumber) ? "bg-amber-50" : ""
+                      }`}
                       data-ocid={`invoices.item.${i + 1}`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-blue text-sm">
-                              #{inv.invoiceNumber.toString()}
-                            </span>
-                            <Badge
-                              className={
-                                inv.isIgst
-                                  ? "bg-blue-light text-blue border-0 text-xs"
-                                  : "bg-teal-light text-teal border-0 text-xs"
-                              }
-                            >
-                              {inv.isIgst ? "IGST" : "CGST+SGST"}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {new Date(
-                              Number(inv.date) / 1_000_000,
-                            ).toLocaleDateString("en-IN")}
-                            {inv.customerName && (
-                              <span> · {inv.customerName}</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {inv.lineItems.length} item(s)
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="font-bold text-sm">
-                            {fmt(inv.grandTotal)}
-                          </div>
-                          <div className="flex items-center gap-1 mt-2 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setViewInvoice(inv)}
-                              className="h-8 w-8 p-0"
-                              title="View"
-                              data-ocid={`invoices.edit_button.${i + 1}`}
-                            >
-                              <Eye className="w-4 h-4 text-teal" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                printTriggered.current = false;
-                                setPrintInvoice(inv);
-                              }}
-                              className="h-8 w-8 p-0"
-                              title="Print"
-                              data-ocid={`invoices.print_button.${i + 1}`}
-                            >
-                              <Printer className="w-4 h-4 text-green-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEdit(inv)}
-                              className="h-8 w-8 p-0"
-                              title="Edit"
-                              data-ocid={`invoices.save_button.${i + 1}`}
-                            >
-                              <Pencil className="w-4 h-4 text-indigo-500" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteTarget(inv)}
-                              className="h-8 w-8 p-0"
-                              title="Delete"
-                              data-ocid={`invoices.delete_button.${i + 1}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </Button>
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedIds.has(inv.invoiceNumber)}
+                          onCheckedChange={() =>
+                            toggleSelect(inv.invoiceNumber)
+                          }
+                          aria-label={`Select invoice #${inv.invoiceNumber}`}
+                          className="mt-1 flex-shrink-0"
+                          data-ocid={`invoices.checkbox.${i + 1}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-bold text-blue text-sm">
+                                  #{inv.invoiceNumber.toString()}
+                                </span>
+                                <Badge
+                                  className={
+                                    inv.isIgst
+                                      ? "bg-blue-light text-blue border-0 text-xs"
+                                      : "bg-teal-light text-teal border-0 text-xs"
+                                  }
+                                >
+                                  {inv.isIgst ? "IGST" : "CGST+SGST"}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {new Date(
+                                  Number(inv.date) / 1_000_000,
+                                ).toLocaleDateString("en-IN")}
+                                {inv.customerName && (
+                                  <span> · {inv.customerName}</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {inv.lineItems.length} item(s)
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="font-bold text-sm">
+                                {fmt(inv.grandTotal)}
+                              </div>
+                              <div className="flex items-center gap-1 mt-2 justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setViewInvoice(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="View"
+                                  data-ocid={`invoices.secondary_button.${i + 1}`}
+                                >
+                                  <Eye className="w-4 h-4 text-teal" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    printTriggered.current = false;
+                                    setPrintInvoice(inv);
+                                  }}
+                                  className="h-8 w-8 p-0"
+                                  title="Print"
+                                  data-ocid={`invoices.secondary_button.${i + 1}`}
+                                >
+                                  <Printer className="w-4 h-4 text-green-600" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => requestEditSingle(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="Edit"
+                                  data-ocid={`invoices.edit_button.${i + 1}`}
+                                >
+                                  <Pencil className="w-4 h-4 text-indigo-500" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => requestDeleteSingle(inv)}
+                                  className="h-8 w-8 p-0"
+                                  title="Delete"
+                                  data-ocid={`invoices.delete_button.${i + 1}`}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-500" />
+                                </Button>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -635,6 +833,14 @@ export default function Invoices() {
                   <Table data-ocid="invoices.table">
                     <TableHeader>
                       <TableRow className="bg-muted/50">
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={allSelected}
+                            onCheckedChange={toggleSelectAll}
+                            aria-label="Select all"
+                            data-ocid="invoices.checkbox"
+                          />
+                        </TableHead>
                         <TableHead>Invoice #</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Customer</TableHead>
@@ -654,9 +860,23 @@ export default function Invoices() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="border-b border-border hover:bg-muted/30 transition-colors"
+                            className={`border-b border-border transition-colors ${
+                              selectedIds.has(inv.invoiceNumber)
+                                ? "bg-amber-50 hover:bg-amber-100/60"
+                                : "hover:bg-muted/30"
+                            }`}
                             data-ocid={`invoices.item.${i + 1}`}
                           >
+                            <TableCell className="w-10">
+                              <Checkbox
+                                checked={selectedIds.has(inv.invoiceNumber)}
+                                onCheckedChange={() =>
+                                  toggleSelect(inv.invoiceNumber)
+                                }
+                                aria-label={`Select invoice #${inv.invoiceNumber}`}
+                                data-ocid={`invoices.checkbox.${i + 1}`}
+                              />
+                            </TableCell>
                             <TableCell className="font-mono font-medium text-blue">
                               #{inv.invoiceNumber.toString()}
                             </TableCell>
@@ -697,7 +917,7 @@ export default function Invoices() {
                                   onClick={() => setViewInvoice(inv)}
                                   className="h-8 w-8 p-0"
                                   title="View"
-                                  data-ocid={`invoices.edit_button.${i + 1}`}
+                                  data-ocid={`invoices.secondary_button.${i + 1}`}
                                 >
                                   <Eye className="w-4 h-4 text-teal" />
                                 </Button>
@@ -710,24 +930,24 @@ export default function Invoices() {
                                   }}
                                   className="h-8 w-8 p-0"
                                   title="Print"
-                                  data-ocid={`invoices.print_button.${i + 1}`}
+                                  data-ocid={`invoices.secondary_button.${i + 1}`}
                                 >
                                   <Printer className="w-4 h-4 text-green-600" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => openEdit(inv)}
+                                  onClick={() => requestEditSingle(inv)}
                                   className="h-8 w-8 p-0"
                                   title="Edit"
-                                  data-ocid={`invoices.save_button.${i + 1}`}
+                                  data-ocid={`invoices.edit_button.${i + 1}`}
                                 >
                                   <Pencil className="w-4 h-4 text-indigo-500" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setDeleteTarget(inv)}
+                                  onClick={() => requestDeleteSingle(inv)}
                                   className="h-8 w-8 p-0"
                                   title="Delete"
                                   data-ocid={`invoices.delete_button.${i + 1}`}
@@ -785,7 +1005,7 @@ export default function Invoices() {
           </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
+        {/* Single Delete Confirmation Dialog */}
         <AlertDialog
           open={!!deleteTarget}
           onOpenChange={(o) => !o && setDeleteTarget(null)}
@@ -822,6 +1042,42 @@ export default function Invoices() {
                 ) : (
                   "Delete"
                 )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <AlertDialog
+          open={bulkDeleteConfirmOpen}
+          onOpenChange={(o) => !o && setBulkDeleteConfirmOpen(false)}
+        >
+          <AlertDialogContent data-ocid="invoices.modal">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Delete {selectedIds.size} Invoice
+                {selectedIds.size > 1 ? "s" : ""}?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the {selectedIds.size} selected
+                invoice{selectedIds.size > 1 ? "s" : ""}. This action cannot be
+                undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                data-ocid="invoices.cancel_button"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleBulkDelete}
+                className="bg-red-600 hover:bg-red-700 text-white"
+                data-ocid="invoices.confirm_button"
+              >
+                Delete {selectedIds.size} Invoice
+                {selectedIds.size > 1 ? "s" : ""}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -872,7 +1128,7 @@ export default function Invoices() {
                       }
                       placeholder="Optional"
                       className="h-8 text-sm"
-                      data-ocid="invoices.textarea"
+                      data-ocid="invoices.input"
                     />
                   </div>
                 </div>

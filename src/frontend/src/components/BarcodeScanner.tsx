@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Html5Qrcode } from "html5-qrcode";
 import { Keyboard, ScanLine, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -46,6 +45,25 @@ function playBeep() {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// CDN loader for html5-qrcode (not in package.json, loaded on demand)
+let html5QrcodePromise: Promise<boolean> | null = null;
+function loadHtml5Qrcode(): Promise<boolean> {
+  if (html5QrcodePromise) return html5QrcodePromise;
+  html5QrcodePromise = new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).Html5Qrcode) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return html5QrcodePromise;
+}
+
 interface BarcodeScannerProps {
   open: boolean;
   onClose: () => void;
@@ -61,7 +79,8 @@ export default function BarcodeScanner({
   const nativeAnimRef = useRef<number>(0);
   const nativeDetectorRef = useRef<unknown>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const html5QrRef = useRef<Html5Qrcode | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const html5QrRef = useRef<any>(null);
 
   const [manualMode, setManualMode] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
@@ -177,6 +196,14 @@ export default function BarcodeScanner({
       // html5-qrcode npm package works natively on iOS.
       setUseHtml5Path(true);
 
+      // Load html5-qrcode CDN if not already loaded
+      const h5ok = await loadHtml5Qrcode();
+      if (!h5ok) {
+        setError("Could not load barcode library. Use manual entry below.");
+        setManualMode(true);
+        return;
+      }
+
       // Wait for React to re-render the div#html5-qrcode-region into the DOM
       await new Promise<void>((r) => setTimeout(r, 300));
 
@@ -188,7 +215,9 @@ export default function BarcodeScanner({
       }
 
       try {
-        const html5QrCode = new Html5Qrcode("html5-qrcode-region");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const Html5QrcodeClass = (window as any).Html5Qrcode;
+        const html5QrCode = new Html5QrcodeClass("html5-qrcode-region");
         html5QrRef.current = html5QrCode;
 
         await html5QrCode.start(

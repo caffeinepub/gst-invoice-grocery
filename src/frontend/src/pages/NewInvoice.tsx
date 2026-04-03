@@ -1,5 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -38,6 +45,12 @@ import BarcodeScanner, { unlockAudio } from "../components/BarcodeScanner";
 import ThermalReceipt from "../components/ThermalReceipt";
 import type { InvoiceLineItemDisplay } from "../components/ThermalReceipt";
 import {
+  deductStockFIFO,
+  getActiveBatches,
+  getTotalBatchStock,
+  hasAnyBatches,
+} from "../hooks/useBatchInventory";
+import {
   useCreateInvoice,
   useGetNextInvoiceNumber,
   useGetProducts,
@@ -47,6 +60,8 @@ import {
 interface CartItem {
   product: Product;
   qty: number;
+  batchId?: string;
+  batchExpiryDate?: string;
 }
 
 function isProductExpired(sku: string): boolean {
@@ -84,11 +99,24 @@ function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
 
 type PaymentMode = "Cash" | "Card" | "UPI";
 
+interface InsufficientItem {
+  name: string;
+  requested: number;
+  available: number;
+}
+
 export default function NewInvoice() {
   const { data: products = [] } = useGetProducts();
-  const inStockProducts = products.filter(
-    (p) => Number(p.stockQty) > 0 && !isProductExpired(p.sku),
-  );
+
+  const inStockProducts = products.filter((p) => {
+    const sku = p.sku;
+    // If product has batches, check batch stock; otherwise check product.stockQty
+    if (hasAnyBatches(sku)) {
+      return getTotalBatchStock(sku) > 0;
+    }
+    return Number(p.stockQty) > 0 && !isProductExpired(sku);
+  });
+
   const { data: store } = useGetStore();
   const { data: nextInvNo } = useGetNextInvoiceNumber();
   const createMutation = useCreateInvoice();
@@ -102,6 +130,12 @@ export default function NewInvoice() {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("Cash");
   const [isPrinting, setIsPrinting] = useState(false);
 
+  // Insufficient stock popup
+  const [insufficientItems, setInsufficientItems] = useState<
+    InsufficientItem[]
+  >([]);
+  const [stockPopupOpen, setStockPopupOpen] = useState(false);
+
   const logoUrl = localStorage.getItem("store_logo") ?? undefined;
 
   // Trigger actual print after animation plays
@@ -114,19 +148,54 @@ export default function NewInvoice() {
     return () => clearTimeout(timer);
   }, [isPrinting]);
 
+  // Resolve batch info for a SKU — returns earliest non-expired batch or null
+  function resolveFirstBatch(sku: string) {
+    if (!hasAnyBatches(sku)) return null;
+    const batches = getActiveBatches(sku);
+    return batches[0] ?? null;
+  }
+
   const addToCart = () => {
     if (!selectedSku) return;
     const product = products.find((p) => p.sku === selectedSku);
     if (!product) return;
-    setCart((prev) => {
-      const existing = prev.find((i) => i.product.sku === selectedSku);
-      if (existing) {
-        return prev.map((i) =>
-          i.product.sku === selectedSku ? { ...i, qty: i.qty + 1 } : i,
-        );
+
+    // Check batch system
+    if (hasAnyBatches(product.sku)) {
+      const activeBatches = getActiveBatches(product.sku);
+      if (activeBatches.length === 0) {
+        toast.error(`All batches of ${product.name} have expired`);
+        return;
       }
-      return [...prev, { product, qty: 1 }];
-    });
+      const earliest = activeBatches[0];
+      setCart((prev) => {
+        const existing = prev.find((i) => i.product.sku === selectedSku);
+        if (existing) {
+          return prev.map((i) =>
+            i.product.sku === selectedSku ? { ...i, qty: i.qty + 1 } : i,
+          );
+        }
+        return [
+          ...prev,
+          {
+            product,
+            qty: 1,
+            batchId: earliest.batchId,
+            batchExpiryDate: earliest.expiryDate,
+          },
+        ];
+      });
+    } else {
+      setCart((prev) => {
+        const existing = prev.find((i) => i.product.sku === selectedSku);
+        if (existing) {
+          return prev.map((i) =>
+            i.product.sku === selectedSku ? { ...i, qty: i.qty + 1 } : i,
+          );
+        }
+        return [...prev, { product, qty: 1 }];
+      });
+    }
     setSelectedSku("");
   };
 
@@ -136,6 +205,38 @@ export default function NewInvoice() {
       toast.error(`No product found with barcode/SKU: ${barcode}`);
       return;
     }
+
+    if (hasAnyBatches(product.sku)) {
+      const activeBatches = getActiveBatches(product.sku);
+      if (activeBatches.length === 0) {
+        toast.error(
+          `All batches of ${product.name} have expired. Cannot add to invoice.`,
+        );
+        return;
+      }
+      const earliest = activeBatches[0];
+      setCart((prev) => {
+        const existing = prev.find((i) => i.product.sku === barcode);
+        if (existing) {
+          return prev.map((i) =>
+            i.product.sku === barcode ? { ...i, qty: i.qty + 1 } : i,
+          );
+        }
+        return [
+          ...prev,
+          {
+            product,
+            qty: 1,
+            batchId: earliest.batchId,
+            batchExpiryDate: earliest.expiryDate,
+          },
+        ];
+      });
+      toast.success(`Added: ${product.name}`);
+      return;
+    }
+
+    // Non-batch product
     if (Number(product.stockQty) <= 0) {
       toast.error(`${product.name} is out of stock`);
       return;
@@ -205,6 +306,32 @@ export default function NewInvoice() {
       toast.error("Add at least one product to the invoice.");
       return;
     }
+
+    // ── Pre-save stock validation
+    const insufficient: InsufficientItem[] = [];
+    for (const item of cart) {
+      const sku = item.product.sku;
+      let available: number;
+      if (hasAnyBatches(sku)) {
+        available = getTotalBatchStock(sku);
+      } else {
+        available = Number(item.product.stockQty);
+      }
+      if (item.qty > available) {
+        insufficient.push({
+          name: item.product.name,
+          requested: item.qty,
+          available,
+        });
+      }
+    }
+
+    if (insufficient.length > 0) {
+      setInsufficientItems(insufficient);
+      setStockPopupOpen(true);
+      return;
+    }
+
     const backendLineItems: LineItem[] = lineItems.map((li) => ({
       qty: li.qty,
       rate: li.rate,
@@ -225,6 +352,19 @@ export default function NewInvoice() {
         isIgst,
         lineItems: backendLineItems,
       });
+
+      // ── Deduct stock: batches via FIFO, non-batches via updateProductStock
+      for (const item of cart) {
+        if (hasAnyBatches(item.product.sku)) {
+          try {
+            deductStockFIFO(item.product.sku, item.qty);
+          } catch (e) {
+            console.warn("Batch deduction warning:", e);
+          }
+        }
+        // Non-batch stock deduction is handled by the backend createInvoice mutation
+      }
+
       toast.success("Invoice saved successfully!");
       setCart([]);
       setCustomerName("");
@@ -303,7 +443,6 @@ export default function NewInvoice() {
             }}
             data-ocid="invoice.modal"
           >
-            {/* Printing label */}
             <div
               style={{
                 position: "absolute",
@@ -325,7 +464,6 @@ export default function NewInvoice() {
               <span>Printing receipt...</span>
             </div>
 
-            {/* Receipt sliding up from bottom - centered */}
             <div
               style={{
                 position: "fixed",
@@ -348,7 +486,6 @@ export default function NewInvoice() {
                   alignItems: "center",
                 }}
               >
-                {/* Paper slot indicator at top */}
                 <div
                   style={{
                     width: 302,
@@ -369,7 +506,6 @@ export default function NewInvoice() {
                     }}
                   />
                 </div>
-                {/* Receipt paper */}
                 <div
                   style={{
                     background: "white",
@@ -385,6 +521,53 @@ export default function NewInvoice() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Insufficient Stock Dialog */}
+      <Dialog open={stockPopupOpen} onOpenChange={setStockPopupOpen}>
+        <DialogContent className="max-w-sm" data-ocid="invoice.dialog">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              ⚠️ Insufficient Stock
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              The following items do not have enough stock. Please reduce
+              quantities before saving.
+            </p>
+            <div className="divide-y divide-border rounded-lg border overflow-hidden">
+              {insufficientItems.map((item) => (
+                <div
+                  key={item.name}
+                  className="px-4 py-3 flex items-center justify-between gap-2"
+                >
+                  <span className="text-sm font-medium truncate">
+                    {item.name}
+                  </span>
+                  <div className="text-xs text-right flex-shrink-0">
+                    <span className="text-destructive font-semibold">
+                      Requested: {item.requested}
+                    </span>
+                    <br />
+                    <span className="text-muted-foreground">
+                      Available: {item.available}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => setStockPopupOpen(false)}
+              className="w-full"
+              data-ocid="invoice.close_button"
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div
         className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6"
@@ -493,13 +676,25 @@ export default function NewInvoice() {
                         No products available
                       </SelectItem>
                     ) : (
-                      inStockProducts.map((p) => (
-                        <SelectItem key={p.sku} value={p.sku}>
-                          {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} |
-                          Qty: {Number(p.stockQty)} (GST: {p.gstRate.toString()}
-                          %)
-                        </SelectItem>
-                      ))
+                      inStockProducts.map((p) => {
+                        const batchStock = hasAnyBatches(p.sku)
+                          ? getTotalBatchStock(p.sku)
+                          : null;
+                        const displayQty =
+                          batchStock !== null ? batchStock : Number(p.stockQty);
+                        const firstBatch = resolveFirstBatch(p.sku);
+                        return (
+                          <SelectItem key={p.sku} value={p.sku}>
+                            {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} |
+                            Qty:
+                            {displayQty}
+                            {firstBatch
+                              ? ` | Batch Exp: ${firstBatch.expiryDate}`
+                              : ""}{" "}
+                            (GST: {p.gstRate.toString()}%)
+                          </SelectItem>
+                        );
+                      })
                     )}
                   </SelectContent>
                 </Select>
@@ -578,7 +773,21 @@ export default function NewInvoice() {
                             data-ocid={`invoice.item.${i + 1}`}
                           >
                             <TableCell className="font-medium">
-                              {item.product.name}
+                              <div>
+                                {item.product.name}
+                                {item.batchExpiryDate && (
+                                  <div className="text-xs text-amber-600 mt-0.5 font-normal">
+                                    Batch exp:{" "}
+                                    {new Date(
+                                      item.batchExpiryDate,
+                                    ).toLocaleDateString("en-IN", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      year: "numeric",
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm">
                               {item.product.hsnCode}

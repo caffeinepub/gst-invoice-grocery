@@ -6,6 +6,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,7 +21,9 @@ import {
   Edit2,
   ImagePlus,
   Loader2,
+  Lock,
   Save,
+  Shield,
   Store,
   X,
 } from "lucide-react";
@@ -22,6 +31,11 @@ import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import {
+  getManagerPin,
+  hasManagerPin,
+  setManagerPin,
+} from "../hooks/useManagerMode";
 import {
   useGetStore,
   useRegisterStore,
@@ -84,6 +98,17 @@ export default function StoreSetup() {
     state: "",
   });
 
+  // ── PIN management state ─────────────────────────────────────────────────
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinHasBeenSet, setPinHasBeenSet] = useState(() => hasManagerPin());
+  const [pinForm, setPinForm] = useState({
+    currentPin: "",
+    newPin: "",
+    confirmPin: "",
+  });
+  const [pinError, setPinError] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+
   const principal = identity?.getPrincipal().toString() ?? "";
 
   useEffect(() => {
@@ -143,6 +168,41 @@ export default function StoreSetup() {
     setLogoUrl("");
     if (fileInputRef.current) fileInputRef.current.value = "";
     toast.success("Logo removed.");
+  };
+
+  // ── PIN save handler ─────────────────────────────────────────────────────
+  const handleSavePin = () => {
+    setPinError("");
+    const { currentPin, newPin, confirmPin } = pinForm;
+
+    // If changing existing PIN, verify current first
+    if (pinHasBeenSet) {
+      const stored = getManagerPin();
+      if (currentPin !== stored) {
+        setPinError("Current PIN is incorrect.");
+        return;
+      }
+    }
+
+    if (!/^\d{4}$/.test(newPin)) {
+      setPinError("New PIN must be exactly 4 digits.");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinError("PINs do not match.");
+      return;
+    }
+
+    setPinSaving(true);
+    setTimeout(() => {
+      setManagerPin(newPin);
+      setPinHasBeenSet(true);
+      setPinForm({ currentPin: "", newPin: "", confirmPin: "" });
+      setPinError("");
+      setPinSaving(false);
+      setPinDialogOpen(false);
+      toast.success("Manager PIN saved!");
+    }, 400);
   };
 
   const isReadOnly = !!store && !editing;
@@ -417,6 +477,188 @@ export default function StoreSetup() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Manager PIN Section — outside the form */}
+      <Card className="shadow-card border-border">
+        <CardHeader className="border-b border-border pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Manager PIN</CardTitle>
+              <CardDescription className="text-sm">
+                Protect edit and delete actions with a 4-digit PIN
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-2.5 h-2.5 rounded-full ${
+                  pinHasBeenSet ? "bg-green-500" : "bg-red-400"
+                }`}
+              />
+              <span className="text-sm text-foreground">
+                {pinHasBeenSet ? "Manager PIN is set" : "Manager PIN not set"}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPinForm({ currentPin: "", newPin: "", confirmPin: "" });
+                setPinError("");
+                setPinDialogOpen(true);
+              }}
+              className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              data-ocid="store.open_modal_button"
+            >
+              <Lock className="w-3.5 h-3.5 mr-1" />
+              {pinHasBeenSet ? "Change PIN" : "Set PIN"}
+            </Button>
+          </div>
+          {!pinHasBeenSet && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Without a PIN, anyone can edit and delete invoices. Setting a PIN
+              adds manager-level protection.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PIN Setup Dialog */}
+      <Dialog
+        open={pinDialogOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPinDialogOpen(false);
+            setPinError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm" data-ocid="store.dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-600" />
+              {pinHasBeenSet ? "Change Manager PIN" : "Set Manager PIN"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {pinHasBeenSet && (
+              <div className="space-y-1.5">
+                <Label htmlFor="current-pin">Current PIN</Label>
+                <Input
+                  id="current-pin"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={pinForm.currentPin}
+                  onChange={(e) =>
+                    setPinForm((p) => ({
+                      ...p,
+                      currentPin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                    }))
+                  }
+                  placeholder="Enter current PIN"
+                  className="text-center text-xl tracking-[0.5em] h-11"
+                  data-ocid="store.input"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="new-pin">New PIN (4 digits)</Label>
+              <Input
+                id="new-pin"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                value={pinForm.newPin}
+                onChange={(e) =>
+                  setPinForm((p) => ({
+                    ...p,
+                    newPin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                  }))
+                }
+                placeholder="● ● ● ●"
+                className="text-center text-xl tracking-[0.5em] h-11"
+                autoFocus={!pinHasBeenSet}
+                data-ocid="store.input"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-pin">Confirm New PIN</Label>
+              <Input
+                id="confirm-pin"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                value={pinForm.confirmPin}
+                onChange={(e) =>
+                  setPinForm((p) => ({
+                    ...p,
+                    confirmPin: e.target.value.replace(/\D/g, "").slice(0, 4),
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSavePin();
+                }}
+                placeholder="● ● ● ●"
+                className="text-center text-xl tracking-[0.5em] h-11"
+                data-ocid="store.input"
+              />
+            </div>
+
+            {pinError && (
+              <p
+                className="text-sm text-destructive"
+                data-ocid="store.error_state"
+              >
+                {pinError}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPinDialogOpen(false);
+                setPinError("");
+              }}
+              data-ocid="store.cancel_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSavePin}
+              disabled={
+                pinSaving ||
+                pinForm.newPin.length !== 4 ||
+                pinForm.confirmPin.length !== 4
+              }
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-ocid="store.save_button"
+            >
+              {pinSaving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Save PIN
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

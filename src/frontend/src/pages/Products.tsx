@@ -31,9 +31,12 @@ import {
 import {
   AlertTriangle,
   Calendar,
+  ChevronDown,
+  ChevronRight,
   Download,
   Edit2,
   FileSpreadsheet,
+  Layers,
   Loader2,
   Package,
   Plus,
@@ -46,6 +49,16 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Product } from "../backend.d";
 import {
+  type ProductBatchEntry,
+  addBatch,
+  deleteBatch,
+  formatBatchDate,
+  getBatchExpiryStatus,
+  getBatches,
+  getTotalBatchStock,
+  hasAnyBatches,
+} from "../hooks/useBatchInventory";
+import {
   useAddProduct,
   useDeleteProduct,
   useGetProducts,
@@ -54,7 +67,7 @@ import {
 
 const GST_RATES = [0, 5, 12, 18, 28];
 
-// ── Expiry helpers ──────────────────────────────────────────────────────────
+// ── Expiry helpers ──────────────────────────────────────────────────────
 function getExpiryKey(sku: string) {
   return `expiry_${sku}`;
 }
@@ -96,7 +109,7 @@ function formatExpiryDisplay(dateStr: string): string {
   });
 }
 
-// ── Product form ─────────────────────────────────────────────────────────────
+// ── Product form ─────────────────────────────────────────────────────────
 interface ProductForm {
   name: string;
   hsnCode: string;
@@ -160,7 +173,7 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
     });
 }
 
-// ── CDN loader for xlsx ──────────────────────────────────────────────────────
+// ── CDN loader for xlsx ─────────────────────────────────────────────────────
 let xlsxPromise: Promise<boolean> | null = null;
 function loadXlsx(): Promise<boolean> {
   if (xlsxPromise) return xlsxPromise;
@@ -180,7 +193,9 @@ function loadXlsx(): Promise<boolean> {
 }
 
 // ── Expiry Badge component ───────────────────────────────────────────────────
-function ExpiryBadge({ status }: { status: ExpiryStatus }) {
+function ExpiryBadge({
+  status,
+}: { status: ExpiryStatus | "expired" | "expiring" | "ok" }) {
   if (status === "expired") {
     return (
       <Badge className="bg-red-100 text-red-700 border-red-200 text-xs px-1.5 py-0">
@@ -198,6 +213,242 @@ function ExpiryBadge({ status }: { status: ExpiryStatus }) {
   return null;
 }
 
+// ── Batch row sub-component ───────────────────────────────────────────────────
+interface BatchPanelProps {
+  sku: string;
+  productName: string;
+  onClose: () => void;
+}
+
+function BatchPanel({ sku, productName, onClose }: BatchPanelProps) {
+  const [batches, setBatchesLocal] = useState<ProductBatchEntry[]>(() =>
+    getBatches(sku),
+  );
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newExpiryDate, setNewExpiryDate] = useState("");
+  const [newStockQty, setNewStockQty] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  function refresh() {
+    setBatchesLocal(getBatches(sku));
+  }
+
+  function handleAddBatch() {
+    if (!newExpiryDate) {
+      toast.error("Please enter an expiry date.");
+      return;
+    }
+    const qty = Number.parseInt(newStockQty);
+    if (Number.isNaN(qty) || qty <= 0) {
+      toast.error("Please enter a valid stock quantity.");
+      return;
+    }
+    setAdding(true);
+    setTimeout(() => {
+      addBatch(sku, newExpiryDate, qty);
+      refresh();
+      setAddDialogOpen(false);
+      setNewExpiryDate("");
+      setNewStockQty("");
+      setAdding(false);
+      toast.success(`Batch added for ${productName}`);
+    }, 200);
+  }
+
+  function handleDeleteBatch(batchId: string) {
+    deleteBatch(sku, batchId);
+    refresh();
+    toast.success("Batch removed.");
+  }
+
+  const totalStock = batches.reduce((sum, b) => sum + b.stockQty, 0);
+
+  return (
+    <>
+      <div className="bg-muted/30 border-t border-b border-dashed border-amber-200 px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-amber-600" />
+            <span className="text-sm font-semibold text-foreground">
+              Batch Inventory for {productName}
+            </span>
+            <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+              {batches.length} batch{batches.length !== 1 ? "es" : ""} · Total:{" "}
+              {totalStock}
+            </Badge>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setAddDialogOpen(true)}
+              className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+              data-ocid="products.secondary_button"
+            >
+              <Plus className="w-3 h-3 mr-1" /> Add Batch
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onClose}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+
+        {batches.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">
+            No batches yet. Add a batch to start tracking by expiry date.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-amber-200 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-amber-50">
+                  <TableHead className="text-xs py-2">Batch ID</TableHead>
+                  <TableHead className="text-xs py-2">Expiry Date</TableHead>
+                  <TableHead className="text-xs py-2 text-right">
+                    Stock Qty
+                  </TableHead>
+                  <TableHead className="text-xs py-2">Status</TableHead>
+                  <TableHead className="text-xs py-2 text-center">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batches.map((batch, idx) => {
+                  const status = getBatchExpiryStatus(batch.expiryDate);
+                  return (
+                    <TableRow
+                      key={batch.batchId}
+                      className={`text-xs ${
+                        status === "expired"
+                          ? "bg-red-50"
+                          : status === "expiring"
+                            ? "bg-amber-50/70"
+                            : ""
+                      }`}
+                      data-ocid={`products.batch.item.${idx + 1}`}
+                    >
+                      <TableCell className="py-1.5 font-mono text-xs text-muted-foreground max-w-[120px] truncate">
+                        {batch.batchId.split("-").slice(-1)[0]}…
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        {formatBatchDate(batch.expiryDate)}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-right font-medium">
+                        {batch.stockQty}
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <ExpiryBadge status={status} />
+                        {status === "ok" && (
+                          <span className="text-xs text-green-600">
+                            ✓ Active
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBatch(batch.batchId)}
+                          className="text-destructive hover:text-destructive/80 transition-colors"
+                          title="Remove batch"
+                          data-ocid={`products.batch.delete_button.${idx + 1}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Batch Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-sm" data-ocid="products.batch_dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-amber-600" />
+              Add Batch — {productName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="batch-expiry">Expiry Date *</Label>
+              <Input
+                id="batch-expiry"
+                type="date"
+                value={newExpiryDate}
+                onChange={(e) => setNewExpiryDate(e.target.value)}
+                data-ocid="products.batch.input"
+              />
+              {newExpiryDate && (
+                <p
+                  className={`text-xs ${
+                    getExpiryStatus(newExpiryDate) === "expired"
+                      ? "text-red-600"
+                      : getExpiryStatus(newExpiryDate) === "expiring"
+                        ? "text-amber-600"
+                        : "text-muted-foreground"
+                  }`}
+                >
+                  {getExpiryStatus(newExpiryDate) === "expired" &&
+                    "⚠ This expiry date has already passed"}
+                  {getExpiryStatus(newExpiryDate) === "expiring" &&
+                    "⚠ This batch expires within 30 days"}
+                  {getExpiryStatus(newExpiryDate) === "ok" &&
+                    `Expires: ${formatExpiryDisplay(newExpiryDate)}`}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="batch-qty">Stock Qty *</Label>
+              <Input
+                id="batch-qty"
+                type="number"
+                min="1"
+                value={newStockQty}
+                onChange={(e) => setNewStockQty(e.target.value)}
+                placeholder="e.g. 50"
+                data-ocid="products.batch.input"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAddDialogOpen(false)}
+              data-ocid="products.batch.cancel_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddBatch}
+              disabled={adding || !newExpiryDate || !newStockQty}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-ocid="products.batch.submit_button"
+            >
+              {adding ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              Add Batch
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function Products() {
   const { data: products = [], isLoading } = useGetProducts();
   const addMutation = useAddProduct();
@@ -209,6 +460,9 @@ export default function Products() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Batch panel expand tracking
+  const [expandedSku, setExpandedSku] = useState<string | null>(null);
 
   // Import state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,7 +480,17 @@ export default function Products() {
     .map((p) => {
       const expiryDate = getExpiry(p.sku);
       const expiryStatus = getExpiryStatus(expiryDate);
-      return { ...p, expiryDate, expiryStatus };
+      const batchCount = getBatches(p.sku).length;
+      const hasBatches = batchCount > 0;
+      const batchStock = hasBatches ? getTotalBatchStock(p.sku) : null;
+      return {
+        ...p,
+        expiryDate,
+        expiryStatus,
+        batchCount,
+        hasBatches,
+        batchStock,
+      };
     })
     .sort((a, b) => {
       const order: Record<ExpiryStatus, number> = {
@@ -290,7 +554,6 @@ export default function Products() {
         });
         toast.success("Product added!");
       }
-      // Save expiry date to localStorage
       setExpiry(sku, form.expiryDate);
       setDialogOpen(false);
     } catch {
@@ -302,7 +565,6 @@ export default function Products() {
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync(deleteTarget);
-      // Clean up expiry from localStorage
       localStorage.removeItem(getExpiryKey(deleteTarget));
       toast.success("Product deleted.");
     } catch {
@@ -330,7 +592,6 @@ export default function Products() {
         const wb = XLS.read(evt.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = XLS.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
-        // Skip header row
         const rows = raw.slice(1);
         const parsed = parseExcelRows(rows);
         if (parsed.length === 0) {
@@ -345,7 +606,6 @@ export default function Products() {
       }
     };
     reader.readAsBinaryString(file);
-    // Reset input
     e.target.value = "";
   };
 
@@ -433,7 +693,6 @@ export default function Products() {
 
   const isPending = addMutation.isPending || updateMutation.isPending;
 
-  // Counts for header badges
   const expiredCount = productsWithExpiry.filter(
     (p) => p.expiryStatus === "expired",
   ).length;
@@ -558,6 +817,7 @@ export default function Products() {
                     <TableHead className="text-center">GST %</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-center">Expiry</TableHead>
+                    <TableHead className="text-center">Batches</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -566,100 +826,150 @@ export default function Products() {
                     {filtered.map((p, i) => {
                       const isExpiredRow = p.expiryStatus === "expired";
                       const isExpiringRow = p.expiryStatus === "expiring";
+                      const isExpanded = expandedSku === p.sku;
+
                       return (
-                        <motion.tr
-                          key={p.sku}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className={`border-b border-border transition-colors ${
-                            isExpiredRow
-                              ? "bg-red-50 hover:bg-red-100/60"
-                              : isExpiringRow
-                                ? "bg-amber-50 hover:bg-amber-100/60"
-                                : "hover:bg-muted/30"
-                          }`}
-                          data-ocid={`products.item.${i + 1}`}
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{p.name}</span>
-                              <ExpiryBadge status={p.expiryStatus} />
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {p.hsnCode}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className="font-mono text-xs"
-                            >
-                              {p.sku}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            ₹{(Number(p.price) / 100).toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge className="bg-saffron-light text-saffron-dark border-0">
-                              {p.gstRate.toString()}%
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span
-                              className={
-                                Number(p.stockQty) < 10
-                                  ? "text-destructive font-medium"
-                                  : ""
-                              }
-                            >
-                              {p.stockQty.toString()}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {p.expiryDate ? (
-                              <div className="flex flex-col items-center gap-0.5">
-                                <span
-                                  className={`text-xs font-medium ${
-                                    isExpiredRow
-                                      ? "text-red-600"
-                                      : isExpiringRow
-                                        ? "text-amber-600"
-                                        : "text-muted-foreground"
-                                  }`}
-                                >
-                                  <Calendar className="w-3 h-3 inline mr-0.5 mb-0.5" />
-                                  {formatExpiryDisplay(p.expiryDate)}
-                                </span>
+                        <>
+                          <motion.tr
+                            key={`row-${p.sku}`}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className={`border-b border-border transition-colors ${
+                              isExpandedRow(isExpanded)
+                                ? "bg-amber-50/60"
+                                : isExpiredRow
+                                  ? "bg-red-50 hover:bg-red-100/60"
+                                  : isExpiringRow
+                                    ? "bg-amber-50 hover:bg-amber-100/60"
+                                    : "hover:bg-muted/30"
+                            }`}
+                            data-ocid={`products.item.${i + 1}`}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{p.name}</span>
+                                <ExpiryBadge status={p.expiryStatus} />
                               </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/50">
-                                —
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEdit(p)}
-                                data-ocid={`products.edit_button.${i + 1}`}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {p.hsnCode}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className="font-mono text-xs"
                               >
-                                <Edit2 className="w-4 h-4 text-indigo" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setDeleteTarget(p.sku)}
-                                data-ocid={`products.delete_button.${i + 1}`}
+                                {p.sku}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              ₹{(Number(p.price) / 100).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge className="bg-saffron-light text-saffron-dark border-0">
+                                {p.gstRate.toString()}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span
+                                  className={
+                                    Number(p.stockQty) < 10
+                                      ? "text-destructive font-medium"
+                                      : ""
+                                  }
+                                >
+                                  {p.stockQty.toString()}
+                                </span>
+                                {p.hasBatches && p.batchStock !== null && (
+                                  <span className="text-xs text-amber-600">
+                                    Batch: {p.batchStock}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {p.expiryDate ? (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <span
+                                    className={`text-xs font-medium ${
+                                      isExpiredRow
+                                        ? "text-red-600"
+                                        : isExpiringRow
+                                          ? "text-amber-600"
+                                          : "text-muted-foreground"
+                                    }`}
+                                  >
+                                    <Calendar className="w-3 h-3 inline mr-0.5 mb-0.5" />
+                                    {formatExpiryDisplay(p.expiryDate)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground/50">
+                                  —
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedSku(isExpanded ? null : p.sku)
+                                }
+                                className="inline-flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 font-medium px-2 py-1 rounded-md hover:bg-amber-100 transition-colors"
+                                data-ocid={`products.batch.toggle.${i + 1}`}
                               >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </motion.tr>
+                                <Layers className="w-3.5 h-3.5" />
+                                {p.batchCount > 0 ? (
+                                  <span>{p.batchCount}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">
+                                    0
+                                  </span>
+                                )}
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3 h-3" />
+                                ) : (
+                                  <ChevronRight className="w-3 h-3" />
+                                )}
+                              </button>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openEdit(p)}
+                                  data-ocid={`products.edit_button.${i + 1}`}
+                                >
+                                  <Edit2 className="w-4 h-4 text-indigo" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleteTarget(p.sku)}
+                                  data-ocid={`products.delete_button.${i + 1}`}
+                                >
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </motion.tr>
+
+                          {/* Batch panel row */}
+                          {isExpanded && (
+                            <tr key={`batch-${p.sku}`}>
+                              <td colSpan={9} className="p-0">
+                                <BatchPanel
+                                  sku={p.sku}
+                                  productName={p.name}
+                                  onClose={() => setExpandedSku(null)}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       );
                     })}
                   </AnimatePresence>
@@ -1013,3 +1323,11 @@ export default function Products() {
     </motion.div>
   );
 }
+
+// Helper to check if row is highlighted for batch panel
+function isExpandedRow(isExpanded: boolean): boolean {
+  return isExpanded;
+}
+
+// Re-export hasAnyBatches for use in component logic
+export { hasAnyBatches };
