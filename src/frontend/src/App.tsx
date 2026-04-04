@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import {
+  Barcode,
   FileText,
   HelpCircle,
   LayoutDashboard,
@@ -18,6 +19,7 @@ import ShyamaChatbot from "./components/ShyamaChatbot";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetMyCredits, useIsCallerAdmin } from "./hooks/useQueries";
 import AdminPanel from "./pages/AdminPanel";
+import BarcodeLabel from "./pages/BarcodeLabel";
 import Dashboard from "./pages/Dashboard";
 import HelpSupport from "./pages/HelpSupport";
 import InactiveAccount from "./pages/InactiveAccount";
@@ -32,6 +34,7 @@ const BASE_TABS = [
   { id: "products", label: "Products", icon: Package },
   { id: "invoice", label: "New Bill", icon: Receipt },
   { id: "invoices", label: "Invoices", icon: FileText },
+  { id: "barcode", label: "Barcode", icon: Barcode },
   { id: "help", label: "Help", icon: HelpCircle },
 ] as const;
 
@@ -239,6 +242,7 @@ export default function App() {
               {activeTab === "products" && <Products />}
               {activeTab === "invoice" && <NewInvoice />}
               {activeTab === "invoices" && <Invoices />}
+              {activeTab === "barcode" && <BarcodeLabel />}
               {activeTab === "admin" && <AdminPanel />}
               {activeTab === "help" && <HelpSupport />}
             </motion.div>
@@ -258,25 +262,25 @@ export default function App() {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as TabId)}
                   data-ocid={`nav.${tab.id}_link` as string}
-                  className={`flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-[56px] px-2 py-1 rounded-xl transition-all ${
+                  className={`flex flex-col items-center justify-center gap-0.5 min-w-[40px] min-h-[52px] px-1.5 py-1 rounded-xl transition-all ${
                     isActive
                       ? "text-saffron"
                       : "text-muted-foreground active:scale-95"
                   }`}
                 >
                   <div
-                    className={`flex items-center justify-center w-10 h-8 rounded-xl transition-all ${
+                    className={`flex items-center justify-center w-9 h-7 rounded-xl transition-all ${
                       isActive ? "bg-saffron/12" : ""
                     }`}
                   >
                     <tab.icon
-                      className={`w-5 h-5 transition-all ${
+                      className={`w-4 h-4 transition-all ${
                         isActive ? "stroke-saffron scale-110" : ""
                       }`}
                     />
                   </div>
                   <span
-                    className={`text-[10px] font-medium leading-none ${
+                    className={`text-[9px] font-medium leading-none ${
                       isActive ? "text-saffron font-semibold" : ""
                     }`}
                   >

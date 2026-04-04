@@ -69,6 +69,16 @@ const STEPS = [
     title: "Admin Panel (Admin Only)",
     desc: "Admin can activate new store accounts, add recharge credits, search stores, and send WhatsApp notifications from the Admin tab.",
   },
+  {
+    step: 11,
+    title: "Manager PIN & Recovery",
+    desc: "Go to Store Setup to set a 4-digit Manager PIN. This PIN is required to edit store details, edit/delete invoices, and view your Principal ID. If you forget your PIN, tap 'Forgot PIN?' in the PIN entry dialog and enter your registered phone number to reset it. After reset, go to Store Setup to set a new PIN.",
+  },
+  {
+    step: 12,
+    title: "Barcode Label Generator",
+    desc: "Tap the 'Barcode' tab to open the label generator. Select a barcode type (Code128, EAN-13, QR, etc.), pick a product from your catalog or enter details manually, set the quantity of labels to print, then tap Print. Labels are saved automatically for future reprinting — just find the saved label, change qty if needed, and reprint.",
+  },
 ];
 
 const TECH = [

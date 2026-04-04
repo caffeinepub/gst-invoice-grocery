@@ -210,6 +210,43 @@ const KB: { keywords: string[]; answer: string }[] = [
     answer:
       "BillKaro is built on Internet Computer (ICP) by DFINITY — a blockchain platform.\n• Backend: Motoko smart contracts (data lives on-chain, no server!).\n• Frontend: React 19 + TypeScript + Tailwind CSS.\n• Auth: Internet Identity (passwordless).\n• Storage: Stable variables in Motoko canister.\nYour data is safe, decentralized, and you truly own it!",
   },
+  {
+    keywords: [
+      "barcode label",
+      "generate barcode",
+      "barcode generator",
+      "label generator",
+      "print barcode",
+      "barcode tab",
+    ],
+    answer:
+      "Go to the Barcode tab in the bottom navigation. Select your barcode type (Code128, EAN-13, QR Code, etc.), pick a product from the dropdown to auto-fill its name, SKU, and MRP, then set the number of labels you want to print. Tap Print to generate a printable label sheet. Your labels are saved for future use — just tap Reprint on any saved label.",
+  },
+  {
+    keywords: [
+      "forgot pin",
+      "forgot manager pin",
+      "reset pin",
+      "pin reset",
+      "manager pin forgot",
+      "recover pin",
+      "pin recovery",
+    ],
+    answer:
+      "Tap 'Forgot PIN?' on the PIN entry screen. Enter your store's registered phone number (the one saved in Store Setup). If it matches, your PIN will be reset and you can go to Store Setup to create a new one. If you don't remember the phone number either, contact support on WhatsApp: +91 7023285769.",
+  },
+  {
+    keywords: [
+      "how to print barcode",
+      "print labels",
+      "barcode sticker",
+      "label print",
+      "product label",
+      "sticker print",
+    ],
+    answer:
+      "1. Tap the Barcode tab. 2. Choose barcode type — use Code128 or EAN-13 for most grocery products. 3. Select product from the dropdown to auto-fill details. 4. Enter the quantity of labels needed. 5. Tap Print — a label sheet opens for your printer. 6. Use standard 2.5x4cm sticker labels in your printer. You can save labels and reprint them anytime from the Saved Labels section.",
+  },
 ];
 
 const QUICK_QUESTIONS = [
@@ -223,6 +260,8 @@ const QUICK_QUESTIONS = [
   "How to use on iPhone?",
   "How to import Excel?",
   "Account inactive help",
+  "How to generate barcode labels?",
+  "I forgot my manager PIN",
 ];
 
 const GREETING =

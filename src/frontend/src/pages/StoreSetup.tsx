@@ -17,11 +17,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Check,
+  CheckCircle2,
   Copy,
   Edit2,
   ImagePlus,
+  KeyRound,
   Loader2,
   Lock,
+  Phone,
   Save,
   Shield,
   Store,
@@ -112,6 +115,10 @@ export default function StoreSetup() {
   const [principalRevealed, setPrincipalRevealed] = useState(false);
   const [principalPinOpen, setPrincipalPinOpen] = useState(false);
   const [editPinOpen, setEditPinOpen] = useState(false);
+  const [showForgotPin, setShowForgotPin] = useState(false);
+  const [forgotPinPhone, setForgotPinPhone] = useState("");
+  const [forgotPinError, setForgotPinError] = useState("");
+  const [forgotPinSuccess, setForgotPinSuccess] = useState(false);
 
   const principal = identity?.getPrincipal().toString() ?? "";
 
@@ -207,6 +214,35 @@ export default function StoreSetup() {
       setPinDialogOpen(false);
       toast.success("Manager PIN saved!");
     }, 400);
+  };
+
+  const handleForgotPin = () => {
+    setForgotPinError("");
+    const phone = forgotPinPhone.trim().replace(/\s/g, "");
+    if (!phone) {
+      setForgotPinError("Please enter your registered phone number.");
+      return;
+    }
+    const storePhone = (store?.phone ?? "").trim().replace(/\s/g, "");
+    if (!storePhone) {
+      setForgotPinError(
+        "No phone number found in store profile. Please contact admin.",
+      );
+      return;
+    }
+    const normalize = (p: string) => p.replace(/^(\+91|91)/, "").slice(-10);
+    if (normalize(phone) !== normalize(storePhone)) {
+      setForgotPinError(
+        "Phone number does not match. Enter the number saved in Store Setup.",
+      );
+      return;
+    }
+    localStorage.removeItem("manager_pin");
+    sessionStorage.removeItem("manager_mode_active");
+    setPinHasBeenSet(false);
+    setForgotPinSuccess(true);
+    setForgotPinPhone("");
+    toast.success("Manager PIN has been reset. Please set a new PIN.");
   };
 
   const isReadOnly = !!store && !editing;
@@ -596,6 +632,78 @@ export default function StoreSetup() {
               Without a PIN, anyone can edit and delete invoices. Setting a PIN
               adds manager-level protection.
             </p>
+          )}
+
+          {/* Forgot PIN recovery */}
+          {pinHasBeenSet && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotPin(!showForgotPin);
+                  setForgotPinError("");
+                  setForgotPinSuccess(false);
+                  setForgotPinPhone("");
+                }}
+                className="text-xs text-amber-600 hover:text-amber-700 underline underline-offset-2 flex items-center gap-1"
+                data-ocid="store.link"
+              >
+                <KeyRound className="w-3 h-3" />
+                Forgot PIN? Reset using phone number
+              </button>
+
+              {showForgotPin && !forgotPinSuccess && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-3">
+                  <p className="text-xs text-amber-800">
+                    Enter your store&apos;s registered phone number to verify
+                    and reset the Manager PIN.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="tel"
+                      inputMode="numeric"
+                      value={forgotPinPhone}
+                      onChange={(e) => {
+                        setForgotPinError("");
+                        setForgotPinPhone(e.target.value);
+                      }}
+                      placeholder="e.g. 9876543210"
+                      className="h-9 text-sm flex-1"
+                      data-ocid="store.input"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleForgotPin}
+                      disabled={!forgotPinPhone.trim()}
+                      className="bg-amber-600 hover:bg-amber-700 text-white h-9"
+                      data-ocid="store.confirm_button"
+                    >
+                      <Phone className="w-3.5 h-3.5 mr-1" />
+                      Verify
+                    </Button>
+                  </div>
+                  {forgotPinError && (
+                    <p
+                      className="text-xs text-destructive"
+                      data-ocid="store.error_state"
+                    >
+                      {forgotPinError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {showForgotPin && forgotPinSuccess && (
+                <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-green-800">
+                    PIN has been reset. Use the <strong>Set PIN</strong> button
+                    above to create a new PIN.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
