@@ -12,8 +12,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-// @ts-ignore - jsbarcode types may not be bundled
-import JsBarcode from "jsbarcode";
 import {
   AlertCircle,
   Barcode,
@@ -23,14 +21,47 @@ import {
   Package,
   Printer,
   RefreshCw,
+  Ruler,
   Trash2,
 } from "lucide-react";
 import { motion } from "motion/react";
-// @ts-ignore - qrcode types from @types/qrcode
-import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useGetProducts, useGetStore } from "../hooks/useQueries";
+
+// CDN-loaded barcode libs — not in package.json
+declare const JsBarcode: (
+  el: SVGElement | HTMLElement,
+  value: string,
+  opts?: Record<string, unknown>,
+) => void;
+declare const QRCode: {
+  toCanvas: (
+    canvas: HTMLCanvasElement,
+    value: string,
+    opts?: Record<string, unknown>,
+  ) => Promise<void>;
+};
+
+function loadScript(src: string, globalName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if ((window as unknown as Record<string, unknown>)[globalName]) {
+      resolve();
+      return;
+    }
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", reject);
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
 
 const BARCODE_TYPES = [
   { value: "CODE128", label: "Code128 (Recommended)" },
@@ -39,6 +70,15 @@ const BARCODE_TYPES = [
   { value: "EAN8", label: "EAN-8" },
   { value: "UPC", label: "UPC-A" },
   { value: "QR", label: "QR Code" },
+];
+
+const LABEL_SIZES = [
+  { label: "38 × 25 mm (Standard)", width: 38, height: 25 },
+  { label: "50 × 25 mm (Wide)", width: 50, height: 25 },
+  { label: "40 × 30 mm (Medium)", width: 40, height: 30 },
+  { label: "57 × 32 mm (Large)", width: 57, height: 32 },
+  { label: "100 × 50 mm (Extra Large)", width: 100, height: 50 },
+  { label: "Custom", width: 0, height: 0 },
 ];
 
 const STORAGE_KEY = "barcode_labels";
@@ -53,6 +93,8 @@ interface SavedLabel {
   showStoreName: boolean;
   storeName: string;
   savedAt: string;
+  labelWidth: number;
+  labelHeight: number;
 }
 
 function loadSavedLabels(): SavedLabel[] {
@@ -87,11 +129,65 @@ export default function BarcodeLabel() {
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [savedLabels, setSavedLabels] = useState<SavedLabel[]>(loadSavedLabels);
   const [barcodeError, setBarcodeError] = useState("");
+  const [libsLoaded, setLibsLoaded] = useState(false);
+
+  // Label size state
+  const [selectedSizeLabel, setSelectedSizeLabel] = useState(
+    "38 × 25 mm (Standard)",
+  );
+  const [labelWidth, setLabelWidth] = useState(38);
+  const [labelHeight, setLabelHeight] = useState(25);
+  const [customWidth, setCustomWidth] = useState("");
+  const [customHeight, setCustomHeight] = useState("");
 
   const svgRef = useRef<SVGSVGElement>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const storeName = store?.name ?? "";
+  const isCustomSize = selectedSizeLabel === "Custom";
+
+  // Load barcode libraries from CDN on mount
+  useEffect(() => {
+    Promise.all([
+      loadScript(
+        "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js",
+        "JsBarcode",
+      ),
+      loadScript(
+        "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js",
+        "QRCode",
+      ),
+    ])
+      .then(() => setLibsLoaded(true))
+      .catch(() => {
+        toast.error(
+          "Could not load barcode library. Check your internet connection.",
+        );
+      });
+  }, []);
+
+  const handleSizeSelect = (sizeLabel: string) => {
+    setSelectedSizeLabel(sizeLabel);
+    const preset = LABEL_SIZES.find((s) => s.label === sizeLabel);
+    if (preset && preset.width > 0) {
+      setLabelWidth(preset.width);
+      setLabelHeight(preset.height);
+      setCustomWidth("");
+      setCustomHeight("");
+    }
+  };
+
+  const handleCustomWidth = (val: string) => {
+    setCustomWidth(val);
+    const n = Number.parseFloat(val);
+    if (!Number.isNaN(n) && n > 0) setLabelWidth(n);
+  };
+
+  const handleCustomHeight = (val: string) => {
+    setCustomHeight(val);
+    const n = Number.parseFloat(val);
+    if (!Number.isNaN(n) && n > 0) setLabelHeight(n);
+  };
 
   // Auto-fill from selected product
   const handleProductSelect = (sku: string) => {
@@ -106,6 +202,7 @@ export default function BarcodeLabel() {
 
   // Render barcode preview
   useEffect(() => {
+    if (!libsLoaded) return;
     setBarcodeError("");
     if (!skuValue) return;
 
@@ -138,7 +235,7 @@ export default function BarcodeLabel() {
         }
       }
     }
-  }, [skuValue, barcodeType]);
+  }, [skuValue, barcodeType, libsLoaded]);
 
   const handleSaveLabel = () => {
     if (!productName || !skuValue) {
@@ -155,6 +252,8 @@ export default function BarcodeLabel() {
       showStoreName,
       storeName,
       savedAt: new Date().toISOString(),
+      labelWidth,
+      labelHeight,
     };
     saveLabelToStorage(label);
     setSavedLabels(loadSavedLabels());
@@ -175,6 +274,25 @@ export default function BarcodeLabel() {
     setQty(label.qty);
     setShowStoreName(label.showStoreName);
     setSelectedProduct("");
+
+    // Restore label size
+    const savedW = label.labelWidth ?? 38;
+    const savedH = label.labelHeight ?? 25;
+    setLabelWidth(savedW);
+    setLabelHeight(savedH);
+    const matchingPreset = LABEL_SIZES.find(
+      (s) => s.width === savedW && s.height === savedH,
+    );
+    if (matchingPreset) {
+      setSelectedSizeLabel(matchingPreset.label);
+      setCustomWidth("");
+      setCustomHeight("");
+    } else {
+      setSelectedSizeLabel("Custom");
+      setCustomWidth(String(savedW));
+      setCustomHeight(String(savedH));
+    }
+
     toast.success("Label loaded — adjust qty/MRP if needed, then print.");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -196,14 +314,43 @@ export default function BarcodeLabel() {
       return;
     }
 
-    // Capture the current SVG or canvas content
+    // Determine barcode height based on label height
+    let barcodeHeightPx = 40;
+    if (labelHeight > 35) {
+      barcodeHeightPx = 70;
+    } else if (labelHeight > 25) {
+      barcodeHeightPx = 55;
+    }
+
+    // Re-generate barcode SVG at correct height for printing
     let barcodeHtml = "";
     if (barcodeType === "QR" && qrCanvasRef.current) {
       const dataUrl = qrCanvasRef.current.toDataURL("image/png");
-      barcodeHtml = `<img src="${dataUrl}" style="width:100px;height:100px;display:block;margin:0 auto 2px;" alt="QR" />`;
+      const qrSize = Math.min(labelWidth * 2, 80);
+      barcodeHtml = `<img src="${dataUrl}" style="width:${qrSize}px;height:${qrSize}px;display:block;margin:0 auto 2px;" alt="QR" />`;
     } else if (svgRef.current) {
-      const svgHtml = svgRef.current.outerHTML;
-      barcodeHtml = `<div style="display:flex;justify-content:center;">${svgHtml}</div>`;
+      // Clone SVG and regenerate at proper height
+      const tempSvg = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg",
+      );
+      try {
+        JsBarcode(tempSvg, skuValue, {
+          format: barcodeType,
+          width: 1.5,
+          height: barcodeHeightPx,
+          displayValue: true,
+          fontSize: 9,
+          margin: 2,
+          background: "#ffffff",
+          lineColor: "#000000",
+        });
+        tempSvg.style.maxWidth = "100%";
+        barcodeHtml = `<div style="display:flex;justify-content:center;">${tempSvg.outerHTML}</div>`;
+      } catch {
+        const svgHtml = svgRef.current.outerHTML;
+        barcodeHtml = `<div style="display:flex;justify-content:center;">${svgHtml}</div>`;
+      }
     }
 
     const storeNameHtml =
@@ -217,7 +364,7 @@ export default function BarcodeLabel() {
         ${barcodeHtml}
         <div style="font-size:9px;font-weight:700;text-align:center;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${productName}</div>
         <div style="display:flex;justify-content:space-between;font-size:8px;margin-top:1px;">
-          <span style="color:#374151;">${mrp ? `MRP: ₹${mrp}` : ""}</span>
+          <span style="color:#374151;">${mrp ? `MRP: \u20B9${mrp}` : ""}</span>
           <span style="color:#9ca3af;font-size:7px;">${barcodeType}</span>
         </div>
       </div>`;
@@ -228,14 +375,14 @@ export default function BarcodeLabel() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Barcode Labels — ${productName}</title>
+        <title>Barcode Labels \u2014 ${productName}</title>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: Arial, sans-serif; background: #fff; padding: 4mm; }
           .grid { display: flex; flex-wrap: wrap; gap: 2mm; }
           .label {
-            width: 40mm;
-            height: 25mm;
+            width: ${labelWidth}mm;
+            height: ${labelHeight}mm;
             border: 0.5px solid #d1d5db;
             border-radius: 2px;
             padding: 2mm;
@@ -262,6 +409,10 @@ export default function BarcodeLabel() {
     printWindow.document.close();
   };
 
+  // Compute scaled preview dimensions
+  const previewWidth = Math.min(labelWidth * 3, 240);
+  const previewMinHeight = Math.min(labelHeight * 3, 180);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -279,7 +430,7 @@ export default function BarcodeLabel() {
             Barcode Label Generator
           </h1>
           <p className="text-sm text-muted-foreground">
-            Generate & print labels for grocery products
+            Generate &amp; print labels for grocery products
           </p>
         </div>
       </div>
@@ -314,6 +465,88 @@ export default function BarcodeLabel() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Label Size */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <Ruler className="w-3.5 h-3.5 text-saffron" />
+              Label Size
+            </Label>
+            <Select value={selectedSizeLabel} onValueChange={handleSizeSelect}>
+              <SelectTrigger data-ocid="barcode.select">
+                <SelectValue placeholder="Select label size" />
+              </SelectTrigger>
+              <SelectContent>
+                {LABEL_SIZES.map((s) => (
+                  <SelectItem key={s.label} value={s.label}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Custom size inputs */}
+            {isCustomSize && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex items-center gap-3 pt-1"
+              >
+                <div className="flex-1 space-y-1">
+                  <Label
+                    htmlFor="custom-w"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Width (mm)
+                  </Label>
+                  <Input
+                    id="custom-w"
+                    type="number"
+                    min={10}
+                    max={200}
+                    value={customWidth}
+                    onChange={(e) => handleCustomWidth(e.target.value)}
+                    placeholder="e.g. 60"
+                    className="h-8 text-sm"
+                    data-ocid="barcode.input"
+                  />
+                </div>
+                <div className="flex items-end pb-1 text-muted-foreground font-bold text-lg">
+                  ×
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label
+                    htmlFor="custom-h"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Height (mm)
+                  </Label>
+                  <Input
+                    id="custom-h"
+                    type="number"
+                    min={10}
+                    max={200}
+                    value={customHeight}
+                    onChange={(e) => handleCustomHeight(e.target.value)}
+                    placeholder="e.g. 40"
+                    className="h-8 text-sm"
+                    data-ocid="barcode.input"
+                  />
+                </div>
+                {labelWidth > 0 && labelHeight > 0 && (
+                  <div className="flex items-end pb-1">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] bg-saffron/10 text-saffron border-saffron/30 whitespace-nowrap"
+                    >
+                      {labelWidth}×{labelHeight}mm
+                    </Badge>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </div>
 
           {/* Product Auto-fill */}
@@ -424,9 +657,19 @@ export default function BarcodeLabel() {
           {/* Preview */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">Label Preview</Label>
+            {!libsLoaded && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Loading barcode library...
+              </div>
+            )}
             <div className="flex justify-center">
               <div
-                className="inline-flex flex-col items-center p-3 rounded-lg border-2 border-dashed border-saffron/40 bg-white min-w-[160px] max-w-[200px] gap-1"
+                className="inline-flex flex-col items-center p-3 rounded-lg border-2 border-dashed border-saffron/40 bg-white gap-1 transition-all duration-300"
+                style={{
+                  width: `${previewWidth}px`,
+                  minHeight: `${previewMinHeight}px`,
+                }}
                 data-ocid="barcode.card"
               >
                 {showStoreName && storeName && (
@@ -467,6 +710,13 @@ export default function BarcodeLabel() {
                     {barcodeType}
                   </span>
                 </div>
+                {/* Size indicator */}
+                <div className="mt-0.5 flex items-center gap-1">
+                  <Ruler className="w-2.5 h-2.5 text-saffron/60" />
+                  <span className="text-[9px] text-saffron/70 font-medium">
+                    {labelWidth}×{labelHeight}mm
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -485,7 +735,7 @@ export default function BarcodeLabel() {
           <div className="flex flex-wrap gap-2 pt-1">
             <Button
               onClick={handlePrint}
-              disabled={!skuValue || !!barcodeError}
+              disabled={!skuValue || !!barcodeError || !libsLoaded}
               className="bg-saffron hover:bg-saffron-dark text-white flex-1 min-w-[120px]"
               data-ocid="barcode.primary_button"
             >
@@ -554,6 +804,15 @@ export default function BarcodeLabel() {
                       >
                         {label.barcodeType}
                       </Badge>
+                      {label.labelWidth > 0 && label.labelHeight > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] py-0 px-1.5 h-4 bg-saffron/5 text-saffron border-saffron/20 flex items-center gap-0.5"
+                        >
+                          <Ruler className="w-2.5 h-2.5" />
+                          {label.labelWidth}×{label.labelHeight}mm
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
                       Saved{" "}
