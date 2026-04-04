@@ -2,6 +2,8 @@
 
 const PIN_KEY = "manager_pin";
 const SESSION_KEY = "manager_mode_active";
+const SECURITY_Q_KEY = "manager_security_question";
+const SECURITY_A_KEY = "manager_security_answer";
 const INACTIVITY_MS = 10 * 60 * 1000; // 10 minutes
 
 let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
@@ -54,4 +56,43 @@ export function lockManagerMode(): void {
     clearTimeout(inactivityTimer);
     inactivityTimer = null;
   }
+}
+
+// ── Security Question for PIN recovery ──────────────────────────────────────
+
+export const SECURITY_QUESTIONS = [
+  "What is your pet's name?",
+  "What is your best friend's name?",
+  "What is your mother's maiden name?",
+  "What was the name of your first school?",
+  "What is your favourite food?",
+  "What is your childhood nickname?",
+];
+
+export function setSecurityQuestion(question: string, answer: string): void {
+  localStorage.setItem(SECURITY_Q_KEY, question);
+  // Normalise: lowercase + trim so answer matching is case-insensitive
+  localStorage.setItem(SECURITY_A_KEY, answer.toLowerCase().trim());
+}
+
+export function getSecurityQuestion(): string | null {
+  return localStorage.getItem(SECURITY_Q_KEY);
+}
+
+export function hasSecurityQuestion(): boolean {
+  return (
+    !!localStorage.getItem(SECURITY_Q_KEY) &&
+    !!localStorage.getItem(SECURITY_A_KEY)
+  );
+}
+
+export function verifySecurityAnswer(answer: string): boolean {
+  const stored = localStorage.getItem(SECURITY_A_KEY);
+  if (!stored) return false;
+  return stored === answer.toLowerCase().trim();
+}
+
+export function clearSecurityQuestion(): void {
+  localStorage.removeItem(SECURITY_Q_KEY);
+  localStorage.removeItem(SECURITY_A_KEY);
 }

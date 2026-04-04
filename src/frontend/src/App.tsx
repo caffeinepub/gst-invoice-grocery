@@ -55,13 +55,24 @@ export default function App() {
     : "";
 
   const { data: isAdmin = false } = useIsCallerAdmin();
-  const { data: credits } = useGetMyCredits();
+  const {
+    data: credits,
+    isLoading: creditsLoading,
+    isError: creditsError,
+  } = useGetMyCredits();
 
   const TABS = isAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS;
 
-  // If logged in, non-admin, and has 0 credits → show inactive screen
+  // FIX: Only show inactive screen when credits are definitively 0 AND fully loaded.
+  // Prevents wrongly locking out new devices/new principals when getMyCredits
+  // fails transiently on first load (network blip, canister cold-start).
   const isInactive =
-    isLoggedIn && !isAdmin && credits !== undefined && credits === 0n;
+    isLoggedIn &&
+    !isAdmin &&
+    !creditsLoading &&
+    !creditsError &&
+    credits !== undefined &&
+    credits === 0n;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

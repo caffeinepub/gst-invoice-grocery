@@ -308,17 +308,17 @@ export function useGetCallerProfile() {
   });
 }
 
+// FIX: No longer silently catch and return 0n on error.
+// Let React Query's retry: 3 handle transient failures.
+// This prevents showing "Account Inactive" on a new device when a
+// network blip or cold-start error causes getMyCredits to fail transiently.
 export function useGetMyCredits() {
   const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["myCredits"],
     queryFn: async (): Promise<bigint> => {
-      if (!actor) return 0n;
-      try {
-        return await actor.getMyCredits();
-      } catch {
-        return 0n;
-      }
+      if (!actor) throw new Error("Actor not ready");
+      return await actor.getMyCredits();
     },
     enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,

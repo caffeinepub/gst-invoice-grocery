@@ -29,39 +29,9 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useGetProducts, useGetStore } from "../hooks/useQueries";
 
-// CDN-loaded barcode libs — not in package.json
-declare const JsBarcode: (
-  el: SVGElement | HTMLElement,
-  value: string,
-  opts?: Record<string, unknown>,
-) => void;
-declare const QRCode: {
-  toCanvas: (
-    canvas: HTMLCanvasElement,
-    value: string,
-    opts?: Record<string, unknown>,
-  ) => Promise<void>;
-};
-
-function loadScript(src: string, globalName: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if ((window as unknown as Record<string, unknown>)[globalName]) {
-      resolve();
-      return;
-    }
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", reject);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = () => resolve();
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
+// Barcode libraries loaded from npm packages (bundled, no CDN dependency)
+import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
 
 const BARCODE_TYPES = [
   { value: "CODE128", label: "Code128 (Recommended)" },
@@ -129,7 +99,8 @@ export default function BarcodeLabel() {
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [savedLabels, setSavedLabels] = useState<SavedLabel[]>(loadSavedLabels);
   const [barcodeError, setBarcodeError] = useState("");
-  const [libsLoaded, setLibsLoaded] = useState(false);
+  // libsLoaded is always true since libraries are bundled via npm
+  const libsLoaded = true;
 
   // Label size state
   const [selectedSizeLabel, setSelectedSizeLabel] = useState(
@@ -146,25 +117,7 @@ export default function BarcodeLabel() {
   const storeName = store?.name ?? "";
   const isCustomSize = selectedSizeLabel === "Custom";
 
-  // Load barcode libraries from CDN on mount
-  useEffect(() => {
-    Promise.all([
-      loadScript(
-        "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js",
-        "JsBarcode",
-      ),
-      loadScript(
-        "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js",
-        "QRCode",
-      ),
-    ])
-      .then(() => setLibsLoaded(true))
-      .catch(() => {
-        toast.error(
-          "Could not load barcode library. Check your internet connection.",
-        );
-      });
-  }, []);
+  // Libraries are bundled via npm — no dynamic loading needed
 
   const handleSizeSelect = (sizeLabel: string) => {
     setSelectedSizeLabel(sizeLabel);
@@ -235,7 +188,7 @@ export default function BarcodeLabel() {
         }
       }
     }
-  }, [skuValue, barcodeType, libsLoaded]);
+  }, [skuValue, barcodeType]);
 
   const handleSaveLabel = () => {
     if (!productName || !skuValue) {

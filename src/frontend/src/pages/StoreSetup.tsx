@@ -36,9 +36,15 @@ import { toast } from "sonner";
 import ManagerPinDialog from "../components/ManagerPinDialog";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  SECURITY_QUESTIONS,
+  clearSecurityQuestion,
   getManagerPin,
+  getSecurityQuestion,
   hasManagerPin,
+  hasSecurityQuestion,
+  setSecurityQuestion as saveSecurityQuestion,
   setManagerPin,
+  verifySecurityAnswer,
 } from "../hooks/useManagerMode";
 import {
   useGetStore,
@@ -119,6 +125,18 @@ export default function StoreSetup() {
   const [forgotPinPhone, setForgotPinPhone] = useState("");
   const [forgotPinError, setForgotPinError] = useState("");
   const [forgotPinSuccess, setForgotPinSuccess] = useState(false);
+  // Security question recovery
+  const [forgotMethod, setForgotMethod] = useState<"phone" | "question">(
+    "phone",
+  );
+  // forgotQuestion removed - not needed, security question is fetched via getSecurityQuestion()
+  const [forgotAnswer, setForgotAnswer] = useState("");
+  // Security question setup in PIN dialog
+  const [securityQuestion, setSecurityQuestion] = useState(
+    () => getSecurityQuestion() ?? "",
+  );
+  const [securityAnswer, setSecurityAnswer] = useState("");
+  const [hasSecQ, setHasSecQ] = useState(() => hasSecurityQuestion());
 
   const principal = identity?.getPrincipal().toString() ?? "";
 
@@ -204,9 +222,21 @@ export default function StoreSetup() {
       return;
     }
 
+    // Validate security question if being set for the first time or changed
+    if (securityAnswer.trim() && !securityQuestion) {
+      setPinError("Please select a security question.");
+      return;
+    }
+
     setPinSaving(true);
     setTimeout(() => {
       setManagerPin(newPin);
+      // Save security question if provided
+      if (securityQuestion && securityAnswer.trim()) {
+        saveSecurityQuestion(securityQuestion, securityAnswer.trim());
+        setHasSecQ(true);
+        setSecurityAnswer("");
+      }
       setPinHasBeenSet(true);
       setPinForm({ currentPin: "", newPin: "", confirmPin: "" });
       setPinError("");
@@ -218,30 +248,45 @@ export default function StoreSetup() {
 
   const handleForgotPin = () => {
     setForgotPinError("");
-    const phone = forgotPinPhone.trim().replace(/\s/g, "");
-    if (!phone) {
-      setForgotPinError("Please enter your registered phone number.");
-      return;
+
+    if (forgotMethod === "phone") {
+      const phone = forgotPinPhone.trim().replace(/\s/g, "");
+      if (!phone) {
+        setForgotPinError("Please enter your registered phone number.");
+        return;
+      }
+      const storePhone = (store?.phone ?? "").trim().replace(/\s/g, "");
+      if (!storePhone) {
+        setForgotPinError(
+          "No phone number found in store profile. Please contact admin.",
+        );
+        return;
+      }
+      const normalize = (p: string) => p.replace(/^(\+91|91)/, "").slice(-10);
+      if (normalize(phone) !== normalize(storePhone)) {
+        setForgotPinError(
+          "Phone number does not match. Enter the number saved in Store Setup.",
+        );
+        return;
+      }
+    } else {
+      // Security question recovery
+      if (!forgotAnswer.trim()) {
+        setForgotPinError("Please enter your answer.");
+        return;
+      }
+      if (!verifySecurityAnswer(forgotAnswer)) {
+        setForgotPinError("Answer is incorrect. Please try again.");
+        return;
+      }
     }
-    const storePhone = (store?.phone ?? "").trim().replace(/\s/g, "");
-    if (!storePhone) {
-      setForgotPinError(
-        "No phone number found in store profile. Please contact admin.",
-      );
-      return;
-    }
-    const normalize = (p: string) => p.replace(/^(\+91|91)/, "").slice(-10);
-    if (normalize(phone) !== normalize(storePhone)) {
-      setForgotPinError(
-        "Phone number does not match. Enter the number saved in Store Setup.",
-      );
-      return;
-    }
+
     localStorage.removeItem("manager_pin");
     sessionStorage.removeItem("manager_mode_active");
     setPinHasBeenSet(false);
     setForgotPinSuccess(true);
     setForgotPinPhone("");
+    setForgotAnswer("");
     toast.success("Manager PIN has been reset. Please set a new PIN.");
   };
 
@@ -644,45 +689,107 @@ export default function StoreSetup() {
                   setForgotPinError("");
                   setForgotPinSuccess(false);
                   setForgotPinPhone("");
+                  setForgotAnswer("");
                 }}
                 className="text-xs text-amber-600 hover:text-amber-700 underline underline-offset-2 flex items-center gap-1"
                 data-ocid="store.link"
               >
                 <KeyRound className="w-3 h-3" />
-                Forgot PIN? Reset using phone number
+                Forgot PIN? Reset here
               </button>
 
               {showForgotPin && !forgotPinSuccess && (
                 <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-3">
-                  <p className="text-xs text-amber-800">
-                    Enter your store&apos;s registered phone number to verify
-                    and reset the Manager PIN.
-                  </p>
+                  {/* Method toggle */}
                   <div className="flex gap-2">
-                    <Input
-                      type="tel"
-                      inputMode="numeric"
-                      value={forgotPinPhone}
-                      onChange={(e) => {
-                        setForgotPinError("");
-                        setForgotPinPhone(e.target.value);
-                      }}
-                      placeholder="e.g. 9876543210"
-                      className="h-9 text-sm flex-1"
-                      data-ocid="store.input"
-                    />
-                    <Button
+                    <button
                       type="button"
-                      size="sm"
-                      onClick={handleForgotPin}
-                      disabled={!forgotPinPhone.trim()}
-                      className="bg-amber-600 hover:bg-amber-700 text-white h-9"
-                      data-ocid="store.confirm_button"
+                      onClick={() => {
+                        setForgotMethod("phone");
+                        setForgotPinError("");
+                      }}
+                      className={`flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors ${forgotMethod === "phone" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-700 border-amber-300 hover:bg-amber-50"}`}
                     >
-                      <Phone className="w-3.5 h-3.5 mr-1" />
-                      Verify
-                    </Button>
+                      📞 Via Phone Number
+                    </button>
+                    {hasSecQ && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotMethod("question");
+                          setForgotPinError("");
+                        }}
+                        className={`flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors ${forgotMethod === "question" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-700 border-amber-300 hover:bg-amber-50"}`}
+                      >
+                        ❓ Via Secret Question
+                      </button>
+                    )}
                   </div>
+
+                  {forgotMethod === "phone" ? (
+                    <>
+                      <p className="text-xs text-amber-800">
+                        Enter your store&apos;s registered phone number to
+                        verify and reset the Manager PIN.
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          type="tel"
+                          inputMode="numeric"
+                          value={forgotPinPhone}
+                          onChange={(e) => {
+                            setForgotPinError("");
+                            setForgotPinPhone(e.target.value);
+                          }}
+                          placeholder="e.g. 9876543210"
+                          className="h-9 text-sm flex-1"
+                          data-ocid="store.input"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleForgotPin}
+                          disabled={!forgotPinPhone.trim()}
+                          className="bg-amber-600 hover:bg-amber-700 text-white h-9"
+                          data-ocid="store.confirm_button"
+                        >
+                          <Phone className="w-3.5 h-3.5 mr-1" />
+                          Verify
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-amber-800 font-medium">
+                        {getSecurityQuestion()}
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          type="text"
+                          value={forgotAnswer}
+                          onChange={(e) => {
+                            setForgotPinError("");
+                            setForgotAnswer(e.target.value);
+                          }}
+                          placeholder="Your answer..."
+                          className="h-9 text-sm flex-1"
+                          data-ocid="store.input"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleForgotPin}
+                          disabled={!forgotAnswer.trim()}
+                          className="bg-amber-600 hover:bg-amber-700 text-white h-9"
+                          data-ocid="store.confirm_button"
+                        >
+                          <KeyRound className="w-3.5 h-3.5 mr-1" />
+                          Verify
+                        </Button>
+                      </div>
+                    </>
+                  )}
+
                   {forgotPinError && (
                     <p
                       className="text-xs text-destructive"
@@ -794,6 +901,52 @@ export default function StoreSetup() {
                 className="text-center text-xl tracking-[0.5em] h-11"
                 data-ocid="store.input"
               />
+            </div>
+
+            {/* Security question setup */}
+            <div className="pt-2 border-t border-border space-y-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-amber-700">
+                  Security Question
+                </span>{" "}
+                — Set this for PIN recovery if you forget your PIN (optional but
+                recommended).
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Choose a question</Label>
+                <select
+                  value={securityQuestion}
+                  onChange={(e) => setSecurityQuestion(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">-- Select a question --</option>
+                  {SECURITY_QUESTIONS.map((q) => (
+                    <option key={q} value={q}>
+                      {q}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {securityQuestion && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Your answer</Label>
+                  <Input
+                    type="text"
+                    value={securityAnswer}
+                    onChange={(e) => setSecurityAnswer(e.target.value)}
+                    placeholder="Enter your answer"
+                    className="h-9 text-sm"
+                    data-ocid="store.input"
+                  />
+                </div>
+              )}
+              {hasSecQ && !securityAnswer && (
+                <p className="text-xs text-green-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Security question already set. Fill in answer only to change
+                  it.
+                </p>
+              )}
             </div>
 
             {pinError && (
