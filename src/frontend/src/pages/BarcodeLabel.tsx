@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertCircle,
   Barcode,
@@ -21,6 +22,7 @@ import {
   Package,
   Printer,
   RefreshCw,
+  RotateCcw,
   Ruler,
   Trash2,
 } from "lucide-react";
@@ -29,9 +31,8 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useGetProducts, useGetStore } from "../hooks/useQueries";
 
-// Barcode libraries loaded from npm packages (bundled, no CDN dependency)
-import JsBarcode from "jsbarcode";
-import QRCode from "qrcode";
+import { loadJsBarcode, renderJsBarcode } from "../utils/jsBarcodeCdn";
+import { generateQrToCanvas } from "../utils/qrCodeCdn";
 
 const BARCODE_TYPES = [
   { value: "CODE128", label: "Code128 (Recommended)" },
@@ -51,7 +52,42 @@ const LABEL_SIZES = [
   { label: "Custom", width: 0, height: 0 },
 ];
 
+// Task 9: Indian hallmarks
+const HALLMARKS = [
+  { id: "bis", label: "BIS", symbol: "BIS" },
+  { id: "iso9001", label: "ISO 9001", symbol: "ISO 9001" },
+  { id: "iso14001", label: "ISO 14001", symbol: "ISO 14001" },
+  {
+    id: "keepcityclean",
+    label: "Keep City Clean",
+    symbol: "♻ Keep City Clean",
+  },
+  { id: "fssai", label: "FSSAI", symbol: "FSSAI" },
+  { id: "organicIndia", label: "Organic India", symbol: "🌿 Organic" },
+  { id: "agmark", label: "Agmark", symbol: "AGMARK" },
+  { id: "indiaOrganic", label: "India Organic", symbol: "India Organic" },
+  { id: "greenDot", label: "Green Dot", symbol: "🟢" },
+  { id: "veg", label: "Veg", symbol: "■ Veg" },
+  { id: "nonveg", label: "Non-Veg", symbol: "▲ Non-Veg" },
+  { id: "mrpInclusive", label: "MRP Inclusive", symbol: "MRP incl. all taxes" },
+  { id: "madeInIndia", label: "Made in India", symbol: "🇮🇳 Made in India" },
+];
+
 const STORAGE_KEY = "barcode_labels";
+
+interface ElementPosition {
+  x: number; // percent of label width
+  y: number; // percent of label height
+}
+
+const DEFAULT_POSITIONS: Record<string, ElementPosition> = {
+  storeName: { x: 50, y: 8 },
+  barcode: { x: 50, y: 42 },
+  productName: { x: 50, y: 70 },
+  mrp: { x: 28, y: 82 },
+  hallmarks: { x: 20, y: 92 },
+  customText: { x: 75, y: 92 },
+};
 
 interface SavedLabel {
   id: string;
@@ -65,6 +101,9 @@ interface SavedLabel {
   savedAt: string;
   labelWidth: number;
   labelHeight: number;
+  selectedHallmarks: string[];
+  customText: string;
+  elementPositions: Record<string, ElementPosition>;
 }
 
 function loadSavedLabels(): SavedLabel[] {
@@ -87,7 +126,7 @@ function deleteLabelFromStorage(id: string) {
 }
 
 export default function BarcodeLabel() {
-  const { data: products = [] } = useGetProducts();
+  const { data: products = [], isLoading: productsLoading } = useGetProducts();
   const { data: store } = useGetStore();
 
   const [barcodeType, setBarcodeType] = useState("CODE128");
@@ -99,8 +138,22 @@ export default function BarcodeLabel() {
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [savedLabels, setSavedLabels] = useState<SavedLabel[]>(loadSavedLabels);
   const [barcodeError, setBarcodeError] = useState("");
-  // libsLoaded is always true since libraries are bundled via npm
   const libsLoaded = true;
+
+  // Task 9: hallmarks, custom text, drag positions
+  const [selectedHallmarks, setSelectedHallmarks] = useState<string[]>([]);
+  const [customText, setCustomText] = useState("");
+  const [elementPositions, setElementPositions] = useState<
+    Record<string, ElementPosition>
+  >(() => ({ ...DEFAULT_POSITIONS }));
+  const [draggingElement, setDraggingElement] = useState<string | null>(null);
+  const dragStartRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    elemX: number;
+    elemY: number;
+  } | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // Label size state
   const [selectedSizeLabel, setSelectedSizeLabel] = useState(
@@ -117,7 +170,19 @@ export default function BarcodeLabel() {
   const storeName = store?.name ?? "";
   const isCustomSize = selectedSizeLabel === "Custom";
 
-  // Libraries are bundled via npm — no dynamic loading needed
+  // Task 1: Auto-select first product when products load
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (
+      !productsLoading &&
+      products.length > 0 &&
+      !skuValue &&
+      !autoSelectedRef.current
+    ) {
+      autoSelectedRef.current = true;
+      handleProductSelect(products[0].sku);
+    }
+  });
 
   const handleSizeSelect = (sizeLabel: string) => {
     setSelectedSizeLabel(sizeLabel);
@@ -142,7 +207,6 @@ export default function BarcodeLabel() {
     if (!Number.isNaN(n) && n > 0) setLabelHeight(n);
   };
 
-  // Auto-fill from selected product
   const handleProductSelect = (sku: string) => {
     setSelectedProduct(sku);
     if (!sku) return;
@@ -150,45 +214,99 @@ export default function BarcodeLabel() {
     if (!p) return;
     setProductName(p.name);
     setSkuValue(p.sku);
-    setMrp(String(Number(p.price)));
+    setMrp(String(Number(p.price) / 100));
   };
 
-  // Render barcode preview
+  // Barcode render
   useEffect(() => {
-    if (!libsLoaded) return;
     setBarcodeError("");
     if (!skuValue) return;
 
     if (barcodeType === "QR") {
       if (qrCanvasRef.current) {
-        QRCode.toCanvas(qrCanvasRef.current, skuValue, {
-          width: 100,
-          margin: 1,
-          color: { dark: "#000000", light: "#ffffff" },
-        }).catch(() => setBarcodeError("QR generation failed"));
+        generateQrToCanvas(qrCanvasRef.current, skuValue, 100).catch(() =>
+          setBarcodeError("QR generation failed"),
+        );
       }
     } else {
-      if (svgRef.current) {
-        try {
-          JsBarcode(svgRef.current, skuValue, {
-            format: barcodeType,
-            width: 1.8,
-            height: 50,
-            displayValue: true,
-            fontSize: 10,
-            margin: 4,
-            background: "#ffffff",
-            lineColor: "#000000",
-          });
-          setBarcodeError("");
-        } catch {
+      loadJsBarcode().then((loaded) => {
+        if (!loaded || !svgRef.current) return;
+        const ok = renderJsBarcode(svgRef.current, skuValue, {
+          format: barcodeType,
+          width: 1.8,
+          height: 50,
+          displayValue: true,
+          fontSize: 10,
+          margin: 4,
+          background: "#ffffff",
+          lineColor: "#000000",
+        });
+        if (!ok) {
           setBarcodeError(
             `Invalid value "${skuValue}" for ${barcodeType} format. Try Code128 or QR Code.`,
           );
+        } else {
+          setBarcodeError("");
         }
-      }
+      });
     }
   }, [skuValue, barcodeType]);
+
+  // Drag handlers
+  const handleDragStart = (
+    elemKey: string,
+    e: React.MouseEvent | React.TouchEvent,
+  ) => {
+    e.preventDefault();
+    const container = previewContainerRef.current;
+    if (!container) return;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const pos = elementPositions[elemKey] ?? { x: 50, y: 50 };
+    dragStartRef.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      elemX: pos.x,
+      elemY: pos.y,
+    };
+    setDraggingElement(elemKey);
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (
+      !draggingElement ||
+      !dragStartRef.current ||
+      !previewContainerRef.current
+    )
+      return;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const rect = previewContainerRef.current.getBoundingClientRect();
+    const dx = ((clientX - dragStartRef.current.mouseX) / rect.width) * 100;
+    const dy = ((clientY - dragStartRef.current.mouseY) / rect.height) * 100;
+    const newX = Math.max(5, Math.min(95, dragStartRef.current.elemX + dx));
+    const newY = Math.max(5, Math.min(95, dragStartRef.current.elemY + dy));
+    setElementPositions((prev) => ({
+      ...prev,
+      [draggingElement]: { x: newX, y: newY },
+    }));
+  };
+
+  const handleDragEnd = () => {
+    setDraggingElement(null);
+    dragStartRef.current = null;
+  };
+
+  const resetPositions = () => {
+    setElementPositions({ ...DEFAULT_POSITIONS });
+    toast.success("Element positions reset.");
+  };
+
+  const toggleHallmark = (id: string) => {
+    setSelectedHallmarks((prev) =>
+      prev.includes(id) ? prev.filter((h) => h !== id) : [...prev, id],
+    );
+  };
 
   const handleSaveLabel = () => {
     if (!productName || !skuValue) {
@@ -207,6 +325,9 @@ export default function BarcodeLabel() {
       savedAt: new Date().toISOString(),
       labelWidth,
       labelHeight,
+      selectedHallmarks,
+      customText,
+      elementPositions,
     };
     saveLabelToStorage(label);
     setSavedLabels(loadSavedLabels());
@@ -227,8 +348,10 @@ export default function BarcodeLabel() {
     setQty(label.qty);
     setShowStoreName(label.showStoreName);
     setSelectedProduct("");
+    setSelectedHallmarks(label.selectedHallmarks ?? []);
+    setCustomText(label.customText ?? "");
+    setElementPositions(label.elementPositions ?? { ...DEFAULT_POSITIONS });
 
-    // Restore label size
     const savedW = label.labelWidth ?? 38;
     const savedH = label.labelHeight ?? 25;
     setLabelWidth(savedW);
@@ -267,7 +390,6 @@ export default function BarcodeLabel() {
       return;
     }
 
-    // Determine barcode height based on label height
     let barcodeHeightPx = 40;
     if (labelHeight > 35) {
       barcodeHeightPx = 70;
@@ -275,20 +397,18 @@ export default function BarcodeLabel() {
       barcodeHeightPx = 55;
     }
 
-    // Re-generate barcode SVG at correct height for printing
     let barcodeHtml = "";
     if (barcodeType === "QR" && qrCanvasRef.current) {
       const dataUrl = qrCanvasRef.current.toDataURL("image/png");
       const qrSize = Math.min(labelWidth * 2, 80);
       barcodeHtml = `<img src="${dataUrl}" style="width:${qrSize}px;height:${qrSize}px;display:block;margin:0 auto 2px;" alt="QR" />`;
     } else if (svgRef.current) {
-      // Clone SVG and regenerate at proper height
       const tempSvg = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "svg",
       );
       try {
-        JsBarcode(tempSvg, skuValue, {
+        renderJsBarcode(tempSvg, skuValue, {
           format: barcodeType,
           width: 1.5,
           height: barcodeHeightPx,
@@ -311,6 +431,19 @@ export default function BarcodeLabel() {
         ? `<div style="font-size:8px;font-weight:600;text-align:center;margin-bottom:2px;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${storeName}</div>`
         : "";
 
+    // Hallmarks
+    const hallmarkSymbols = selectedHallmarks
+      .map((id) => HALLMARKS.find((h) => h.id === id)?.symbol ?? "")
+      .filter(Boolean);
+    const hallmarksHtml =
+      hallmarkSymbols.length > 0
+        ? `<div style="font-size:7px;text-align:center;color:#555;margin-top:1px;">${hallmarkSymbols.join(" | ")}</div>`
+        : "";
+
+    const customTextHtml = customText.trim()
+      ? `<div style="font-size:7px;text-align:center;color:#333;margin-top:1px;white-space:pre-line;">${customText}</div>`
+      : "";
+
     const labelHtml = `
       <div class="label">
         ${storeNameHtml}
@@ -320,6 +453,8 @@ export default function BarcodeLabel() {
           <span style="color:#374151;">${mrp ? `MRP: \u20B9${mrp}` : ""}</span>
           <span style="color:#9ca3af;font-size:7px;">${barcodeType}</span>
         </div>
+        ${hallmarksHtml}
+        ${customTextHtml}
       </div>`;
 
     const allLabels = Array(labelCount).fill(labelHtml).join("");
@@ -328,7 +463,7 @@ export default function BarcodeLabel() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Barcode Labels \u2014 ${productName}</title>
+        <title>Barcode Labels — ${productName}</title>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { font-family: Arial, sans-serif; background: #fff; padding: 4mm; }
@@ -362,9 +497,44 @@ export default function BarcodeLabel() {
     printWindow.document.close();
   };
 
-  // Compute scaled preview dimensions
-  const previewWidth = Math.min(labelWidth * 3, 240);
-  const previewMinHeight = Math.min(labelHeight * 3, 180);
+  const previewWidth = Math.min(labelWidth * 3.5, 280);
+  const previewHeight = Math.min(labelHeight * 3.5, 220);
+
+  const hallmarkSymbolsDisplay = selectedHallmarks
+    .map((id) => HALLMARKS.find((h) => h.id === id)?.symbol ?? "")
+    .filter(Boolean);
+
+  // Empty state (Task 1)
+  if (!productsLoading && products.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl"
+        data-ocid="barcode.section"
+      >
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-saffron-light flex items-center justify-center">
+            <Package className="w-8 h-8 text-saffron" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">
+            No products found
+          </h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Go to the Products page to add products first, then come back here
+            to generate barcode labels.
+          </p>
+          <Button
+            className="bg-saffron hover:bg-saffron-dark text-white"
+            onClick={() => window.history.back()}
+            data-ocid="barcode.primary_button"
+          >
+            <Package className="w-4 h-4 mr-2" /> Go to Products page
+          </Button>
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -439,7 +609,6 @@ export default function BarcodeLabel() {
               </SelectContent>
             </Select>
 
-            {/* Custom size inputs */}
             {isCustomSize && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
@@ -607,66 +776,292 @@ export default function BarcodeLabel() {
 
           <Separator />
 
-          {/* Preview */}
+          {/* Task 9: Symbols & Hallmarks */}
           <div className="space-y-2">
-            <Label className="text-sm font-semibold">Label Preview</Label>
-            {!libsLoaded && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Loading barcode library...
-              </div>
-            )}
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              🏷️ Symbols &amp; Hallmarks
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Select symbols to print on the label.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {HALLMARKS.map((h) => (
+                <div
+                  key={h.id}
+                  className="flex items-center gap-2 p-2 rounded-lg border border-border hover:border-saffron/40 cursor-pointer transition-colors"
+                >
+                  <Checkbox
+                    checked={selectedHallmarks.includes(h.id)}
+                    onCheckedChange={() => toggleHallmark(h.id)}
+                    className="flex-shrink-0"
+                  />
+                  <span className="text-xs font-medium text-foreground truncate">
+                    {h.symbol}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Task 9: Custom text */}
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-text">
+              Custom Text{" "}
+              <span className="text-xs text-muted-foreground font-normal">
+                (printed on label, up to 2 lines)
+              </span>
+            </Label>
+            <Textarea
+              id="custom-text"
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="e.g. Best before use, Store in cool &amp; dry place"
+              rows={2}
+              maxLength={100}
+              className="resize-none text-sm"
+              data-ocid="barcode.textarea"
+            />
+          </div>
+
+          <Separator />
+
+          {/* Task 9: Drag-to-reposition Preview */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">Label Preview</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={resetPositions}
+                className="h-7 text-xs border-border text-muted-foreground hover:text-foreground"
+              >
+                <RotateCcw className="w-3 h-3 mr-1" /> Reset Positions
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Drag elements to reposition them on the label.
+            </p>
+
             <div className="flex justify-center">
               <div
-                className="inline-flex flex-col items-center p-3 rounded-lg border-2 border-dashed border-saffron/40 bg-white gap-1 transition-all duration-300"
+                ref={previewContainerRef}
                 style={{
                   width: `${previewWidth}px`,
-                  minHeight: `${previewMinHeight}px`,
+                  height: `${previewHeight}px`,
+                  position: "relative",
+                  overflow: "hidden",
+                  border: "2px dashed",
+                  borderColor: "oklch(0.75 0.12 55)",
+                  borderRadius: "8px",
+                  background: "#fff",
+                  userSelect: "none",
+                  cursor: draggingElement ? "grabbing" : "default",
                 }}
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}
+                onTouchMove={handleDragMove}
+                onTouchEnd={handleDragEnd}
                 data-ocid="barcode.card"
               >
+                {/* Store Name */}
                 {showStoreName && storeName && (
-                  <p className="text-[10px] font-semibold text-gray-800 max-w-full truncate">
-                    {storeName}
-                  </p>
-                )}
-
-                {skuValue ? (
-                  barcodeType === "QR" ? (
-                    <canvas
-                      ref={qrCanvasRef}
-                      width={100}
-                      height={100}
-                      className="block"
-                    />
-                  ) : (
-                    <svg ref={svgRef} className="max-w-full" />
-                  )
-                ) : (
-                  <div className="w-full h-14 flex items-center justify-center bg-gray-50 rounded text-xs text-muted-foreground">
-                    Enter barcode value
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${elementPositions.storeName.x}%`,
+                      top: `${elementPositions.storeName.y}%`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: "grab",
+                      padding: "2px 4px",
+                      borderRadius: "3px",
+                      border:
+                        draggingElement === "storeName"
+                          ? "1px dashed #f97316"
+                          : "1px dashed transparent",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseDown={(e) => handleDragStart("storeName", e)}
+                    onTouchStart={(e) => handleDragStart("storeName", e)}
+                  >
+                    <p className="text-[9px] font-semibold text-gray-800 max-w-[180px] truncate">
+                      {storeName}
+                    </p>
                   </div>
                 )}
 
+                {/* Barcode */}
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${elementPositions.barcode.x}%`,
+                    top: `${elementPositions.barcode.y}%`,
+                    transform: "translate(-50%, -50%)",
+                    cursor: "grab",
+                    border:
+                      draggingElement === "barcode"
+                        ? "1px dashed #f97316"
+                        : "1px dashed transparent",
+                    padding: "2px",
+                  }}
+                  onMouseDown={(e) => handleDragStart("barcode", e)}
+                  onTouchStart={(e) => handleDragStart("barcode", e)}
+                >
+                  {skuValue ? (
+                    barcodeType === "QR" ? (
+                      <canvas
+                        ref={qrCanvasRef}
+                        width={80}
+                        height={80}
+                        className="block"
+                        style={{ maxWidth: `${previewWidth - 20}px` }}
+                      />
+                    ) : (
+                      <svg
+                        ref={svgRef}
+                        style={{
+                          maxWidth: `${previewWidth - 20}px`,
+                          height: "auto",
+                        }}
+                      />
+                    )
+                  ) : (
+                    <div
+                      style={{
+                        width: `${previewWidth - 40}px`,
+                        height: "40px",
+                        background: "#f3f4f6",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "10px",
+                        color: "#9ca3af",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      Enter barcode value
+                    </div>
+                  )}
+                </div>
+
+                {/* Product Name */}
                 {productName && (
-                  <p className="text-[10px] font-bold text-gray-900 max-w-full truncate">
-                    {productName}
-                  </p>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${elementPositions.productName.x}%`,
+                      top: `${elementPositions.productName.y}%`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: "grab",
+                      border:
+                        draggingElement === "productName"
+                          ? "1px dashed #f97316"
+                          : "1px dashed transparent",
+                      padding: "2px 4px",
+                      borderRadius: "3px",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseDown={(e) => handleDragStart("productName", e)}
+                    onTouchStart={(e) => handleDragStart("productName", e)}
+                  >
+                    <p className="text-[9px] font-bold text-gray-900 max-w-[200px] truncate">
+                      {productName}
+                    </p>
+                  </div>
                 )}
-                <div className="flex items-center justify-between w-full">
-                  {mrp && (
-                    <span className="text-[10px] font-semibold text-gray-700">
+
+                {/* MRP */}
+                {mrp && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${elementPositions.mrp.x}%`,
+                      top: `${elementPositions.mrp.y}%`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: "grab",
+                      border:
+                        draggingElement === "mrp"
+                          ? "1px dashed #f97316"
+                          : "1px dashed transparent",
+                      padding: "2px 4px",
+                      borderRadius: "3px",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseDown={(e) => handleDragStart("mrp", e)}
+                    onTouchStart={(e) => handleDragStart("mrp", e)}
+                  >
+                    <span className="text-[9px] font-semibold text-gray-700">
                       MRP: ₹{mrp}
                     </span>
-                  )}
-                  <span className="text-[9px] text-gray-400 ml-auto">
-                    {barcodeType}
-                  </span>
-                </div>
-                {/* Size indicator */}
-                <div className="mt-0.5 flex items-center gap-1">
-                  <Ruler className="w-2.5 h-2.5 text-saffron/60" />
-                  <span className="text-[9px] text-saffron/70 font-medium">
+                  </div>
+                )}
+
+                {/* Hallmarks */}
+                {hallmarkSymbolsDisplay.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${elementPositions.hallmarks.x}%`,
+                      top: `${elementPositions.hallmarks.y}%`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: "grab",
+                      border:
+                        draggingElement === "hallmarks"
+                          ? "1px dashed #f97316"
+                          : "1px dashed transparent",
+                      padding: "2px 4px",
+                      borderRadius: "3px",
+                      whiteSpace: "nowrap",
+                    }}
+                    onMouseDown={(e) => handleDragStart("hallmarks", e)}
+                    onTouchStart={(e) => handleDragStart("hallmarks", e)}
+                  >
+                    <p className="text-[7px] text-gray-500 max-w-[180px] truncate">
+                      {hallmarkSymbolsDisplay.join(" | ")}
+                    </p>
+                  </div>
+                )}
+
+                {/* Custom Text */}
+                {customText.trim() && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${elementPositions.customText.x}%`,
+                      top: `${elementPositions.customText.y}%`,
+                      transform: "translate(-50%, -50%)",
+                      cursor: "grab",
+                      border:
+                        draggingElement === "customText"
+                          ? "1px dashed #f97316"
+                          : "1px dashed transparent",
+                      padding: "2px 4px",
+                      borderRadius: "3px",
+                      maxWidth: "120px",
+                    }}
+                    onMouseDown={(e) => handleDragStart("customText", e)}
+                    onTouchStart={(e) => handleDragStart("customText", e)}
+                  >
+                    <p
+                      className="text-[7px] text-gray-600"
+                      style={{ whiteSpace: "pre-line", lineHeight: 1.3 }}
+                    >
+                      {customText}
+                    </p>
+                  </div>
+                )}
+
+                {/* Size indicator overlay */}
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: 4,
+                    right: 6,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span className="text-[8px] text-saffron/60 font-medium">
                     {labelWidth}×{labelHeight}mm
                   </span>
                 </div>

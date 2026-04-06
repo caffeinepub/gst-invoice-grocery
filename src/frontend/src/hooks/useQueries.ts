@@ -15,13 +15,32 @@ const DATA_QUERY_DEFAULTS = {
   retryDelay: 2000,
 };
 
+// Queries that return null/[] when store doesn't exist (instead of throwing).
+// This prevents blank screens for: admin users (who have no store),
+// newly-activated principals (store not yet registered), and other edge cases.
+function isStoreNotFoundError(e: unknown): boolean {
+  const msg = String(e);
+  return (
+    msg.includes("Store not found") ||
+    msg.includes("store not found") ||
+    msg.includes("not found for this caller")
+  );
+}
+
 export function useGetStore() {
   const { actor, isFetching: isLoading } = useActor();
   return useQuery({
     queryKey: ["store"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
-      return await actor.getStore();
+      try {
+        return await actor.getStore();
+      } catch (e) {
+        // If no store exists for this caller, return null (not an error).
+        // This lets StoreSetup show the registration form immediately.
+        if (isStoreNotFoundError(e)) return null;
+        throw e;
+      }
     },
     enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
@@ -34,8 +53,14 @@ export function useGetStoreSummary() {
     queryKey: ["storeSummary"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
-      const result = await actor.getStoreSummary();
-      return result;
+      try {
+        const result = await actor.getStoreSummary();
+        return result;
+      } catch (e) {
+        // Admin users and new principals have no store yet — return null gracefully.
+        if (isStoreNotFoundError(e)) return null;
+        throw e;
+      }
     },
     enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
@@ -48,7 +73,13 @@ export function useGetProducts() {
     queryKey: ["products"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
-      return await actor.getProducts();
+      try {
+        return await actor.getProducts();
+      } catch (e) {
+        // Admin users and new principals have no store — return empty list.
+        if (isStoreNotFoundError(e)) return [];
+        throw e;
+      }
     },
     enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,
@@ -61,7 +92,12 @@ export function useGetInvoices() {
     queryKey: ["invoices"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not ready");
-      return await actor.getInvoices();
+      try {
+        return await actor.getInvoices();
+      } catch (e) {
+        if (isStoreNotFoundError(e)) return [];
+        throw e;
+      }
     },
     enabled: !!actor && !isLoading,
     ...DATA_QUERY_DEFAULTS,

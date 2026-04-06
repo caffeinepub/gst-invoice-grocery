@@ -24,7 +24,6 @@ import {
   KeyRound,
   Loader2,
   Lock,
-  Phone,
   Save,
   Shield,
   Store,
@@ -51,6 +50,9 @@ import {
   useRegisterStore,
   useUpdateStore,
 } from "../hooks/useQueries";
+
+// suppress unused import warnings
+void clearSecurityQuestion;
 
 const INDIAN_STATES = [
   "Andhra Pradesh",
@@ -108,7 +110,7 @@ export default function StoreSetup() {
     state: "",
   });
 
-  // ── PIN management state ─────────────────────────────────────────────────
+  // ── PIN management state ───────────────────────────────────────────
   const [pinDialogOpen, setPinDialogOpen] = useState(false);
   const [pinHasBeenSet, setPinHasBeenSet] = useState(() => hasManagerPin());
   const [pinForm, setPinForm] = useState({
@@ -122,14 +124,9 @@ export default function StoreSetup() {
   const [principalPinOpen, setPrincipalPinOpen] = useState(false);
   const [editPinOpen, setEditPinOpen] = useState(false);
   const [showForgotPin, setShowForgotPin] = useState(false);
-  const [forgotPinPhone, setForgotPinPhone] = useState("");
   const [forgotPinError, setForgotPinError] = useState("");
   const [forgotPinSuccess, setForgotPinSuccess] = useState(false);
-  // Security question recovery
-  const [forgotMethod, setForgotMethod] = useState<"phone" | "question">(
-    "phone",
-  );
-  // forgotQuestion removed - not needed, security question is fetched via getSecurityQuestion()
+  // Task 5: Only security question recovery — phone method removed
   const [forgotAnswer, setForgotAnswer] = useState("");
   // Security question setup in PIN dialog
   const [securityQuestion, setSecurityQuestion] = useState(
@@ -199,12 +196,11 @@ export default function StoreSetup() {
     toast.success("Logo removed.");
   };
 
-  // ── PIN save handler ─────────────────────────────────────────────────────
+  // ── PIN save handler ─────────────────────────────────────────
   const handleSavePin = () => {
     setPinError("");
     const { currentPin, newPin, confirmPin } = pinForm;
 
-    // If changing existing PIN, verify current first
     if (pinHasBeenSet) {
       const stored = getManagerPin();
       if (currentPin !== stored) {
@@ -222,7 +218,6 @@ export default function StoreSetup() {
       return;
     }
 
-    // Validate security question if being set for the first time or changed
     if (securityAnswer.trim() && !securityQuestion) {
       setPinError("Please select a security question.");
       return;
@@ -231,7 +226,6 @@ export default function StoreSetup() {
     setPinSaving(true);
     setTimeout(() => {
       setManagerPin(newPin);
-      // Save security question if provided
       if (securityQuestion && securityAnswer.trim()) {
         saveSecurityQuestion(securityQuestion, securityAnswer.trim());
         setHasSecQ(true);
@@ -246,46 +240,33 @@ export default function StoreSetup() {
     }, 400);
   };
 
+  // Task 5: Simplified forgot PIN — only security question method
   const handleForgotPin = () => {
     setForgotPinError("");
 
-    if (forgotMethod === "phone") {
-      const phone = forgotPinPhone.trim().replace(/\s/g, "");
-      if (!phone) {
-        setForgotPinError("Please enter your registered phone number.");
-        return;
-      }
-      const storePhone = (store?.phone ?? "").trim().replace(/\s/g, "");
-      if (!storePhone) {
-        setForgotPinError(
-          "No phone number found in store profile. Please contact admin.",
-        );
-        return;
-      }
-      const normalize = (p: string) => p.replace(/^(\+91|91)/, "").slice(-10);
-      if (normalize(phone) !== normalize(storePhone)) {
-        setForgotPinError(
-          "Phone number does not match. Enter the number saved in Store Setup.",
-        );
-        return;
-      }
-    } else {
-      // Security question recovery
-      if (!forgotAnswer.trim()) {
-        setForgotPinError("Please enter your answer.");
-        return;
-      }
-      if (!verifySecurityAnswer(forgotAnswer)) {
-        setForgotPinError("Answer is incorrect. Please try again.");
-        return;
-      }
+    if (!hasSecQ) {
+      // No security question set — force reset (last resort)
+      localStorage.removeItem("manager_pin");
+      sessionStorage.removeItem("manager_mode_active");
+      setPinHasBeenSet(false);
+      setForgotPinSuccess(true);
+      toast.success("Manager PIN has been reset. Please set a new PIN.");
+      return;
+    }
+
+    if (!forgotAnswer.trim()) {
+      setForgotPinError("Please enter your answer.");
+      return;
+    }
+    if (!verifySecurityAnswer(forgotAnswer)) {
+      setForgotPinError("Answer is incorrect. Please try again.");
+      return;
     }
 
     localStorage.removeItem("manager_pin");
     sessionStorage.removeItem("manager_mode_active");
     setPinHasBeenSet(false);
     setForgotPinSuccess(true);
-    setForgotPinPhone("");
     setForgotAnswer("");
     toast.success("Manager PIN has been reset. Please set a new PIN.");
   };
@@ -629,7 +610,7 @@ export default function StoreSetup() {
         </CardContent>
       </Card>
 
-      {/* Manager PIN Section — outside the form */}
+      {/* Manager PIN Section */}
       <Card className="shadow-card border-border">
         <CardHeader className="border-b border-border pb-4">
           <div className="flex items-center gap-3">
@@ -679,7 +660,7 @@ export default function StoreSetup() {
             </p>
           )}
 
-          {/* Forgot PIN recovery */}
+          {/* Task 5: Simplified forgot PIN — only security question */}
           {pinHasBeenSet && (
             <div className="mt-3">
               <button
@@ -688,7 +669,6 @@ export default function StoreSetup() {
                   setShowForgotPin(!showForgotPin);
                   setForgotPinError("");
                   setForgotPinSuccess(false);
-                  setForgotPinPhone("");
                   setForgotAnswer("");
                 }}
                 className="text-xs text-amber-600 hover:text-amber-700 underline underline-offset-2 flex items-center gap-1"
@@ -700,67 +680,12 @@ export default function StoreSetup() {
 
               {showForgotPin && !forgotPinSuccess && (
                 <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-3">
-                  {/* Method toggle */}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotMethod("phone");
-                        setForgotPinError("");
-                      }}
-                      className={`flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors ${forgotMethod === "phone" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-700 border-amber-300 hover:bg-amber-50"}`}
-                    >
-                      📞 Via Phone Number
-                    </button>
-                    {hasSecQ && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForgotMethod("question");
-                          setForgotPinError("");
-                        }}
-                        className={`flex-1 text-xs py-1.5 rounded-md border font-medium transition-colors ${forgotMethod === "question" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-700 border-amber-300 hover:bg-amber-50"}`}
-                      >
-                        ❓ Via Secret Question
-                      </button>
-                    )}
-                  </div>
-
-                  {forgotMethod === "phone" ? (
-                    <>
-                      <p className="text-xs text-amber-800">
-                        Enter your store&apos;s registered phone number to
-                        verify and reset the Manager PIN.
-                      </p>
-                      <div className="flex gap-2">
-                        <Input
-                          type="tel"
-                          inputMode="numeric"
-                          value={forgotPinPhone}
-                          onChange={(e) => {
-                            setForgotPinError("");
-                            setForgotPinPhone(e.target.value);
-                          }}
-                          placeholder="e.g. 9876543210"
-                          className="h-9 text-sm flex-1"
-                          data-ocid="store.input"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={handleForgotPin}
-                          disabled={!forgotPinPhone.trim()}
-                          className="bg-amber-600 hover:bg-amber-700 text-white h-9"
-                          data-ocid="store.confirm_button"
-                        >
-                          <Phone className="w-3.5 h-3.5 mr-1" />
-                          Verify
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
+                  {hasSecQ ? (
                     <>
                       <p className="text-xs text-amber-800 font-medium">
+                        Answer your security question to reset the PIN:
+                      </p>
+                      <p className="text-xs text-amber-900 font-semibold">
                         {getSecurityQuestion()}
                       </p>
                       <div className="flex gap-2">
@@ -787,6 +712,26 @@ export default function StoreSetup() {
                           Verify
                         </Button>
                       </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-amber-800">
+                        No recovery method set. You can reset the PIN without
+                        verification as a last resort.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleForgotPin}
+                        className="w-full bg-red-600 hover:bg-red-700 text-white h-9 text-xs"
+                        data-ocid="store.confirm_button"
+                      >
+                        Reset PIN (No Verification)
+                      </Button>
+                      <p className="text-[10px] text-muted-foreground">
+                        Tip: Set a security question next time you create a PIN
+                        to enable secure recovery.
+                      </p>
                     </>
                   )}
 

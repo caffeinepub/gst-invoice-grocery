@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import type { Invoice, StoreProfile } from "../backend.d";
+import { generateQrDataUrl } from "../utils/qrCodeCdn";
 
 const fmt = (paise: bigint) => `₹${(Number(paise) / 100).toFixed(2)}`;
 
@@ -81,6 +83,39 @@ function groupByGstRate(items: InvoiceLineItemDisplay[]) {
   return map;
 }
 
+function groupByHsn(items: InvoiceLineItemDisplay[]) {
+  const map = new Map<
+    string,
+    {
+      taxable: bigint;
+      cgst: bigint;
+      sgst: bigint;
+      igst: bigint;
+      gstRate: number;
+    }
+  >();
+  for (const item of items) {
+    const hsn = item.hsnCode || "—";
+    const rate = Number(item.gstRate);
+    const taxable = item.qty * item.rate;
+    const existing = map.get(hsn) || {
+      taxable: 0n,
+      cgst: 0n,
+      sgst: 0n,
+      igst: 0n,
+      gstRate: rate,
+    };
+    map.set(hsn, {
+      taxable: existing.taxable + taxable,
+      cgst: existing.cgst + item.cgstAmt,
+      sgst: existing.sgst + item.sgstAmt,
+      igst: existing.igst + item.igstAmt,
+      gstRate: rate,
+    });
+  }
+  return map;
+}
+
 export default function ThermalReceipt({
   store,
   invoiceNumber,
@@ -98,6 +133,7 @@ export default function ThermalReceipt({
   paymentMode,
 }: Props) {
   const gstBreakdown = groupByGstRate(lineItems);
+  const hsnBreakdown = groupByHsn(lineItems);
   const dashedLine = "- - - - - - - - - - - - - - - - - - - -";
   const solidLine = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
@@ -109,6 +145,44 @@ export default function ThermalReceipt({
         : paymentMode === "UPI"
           ? "📲"
           : "";
+
+  // Task 7: Total items and total qty
+  const totalItems = lineItems.length;
+  const totalQty = lineItems.reduce((sum, li) => sum + Number(li.qty), 0);
+
+  // Task 8: QR code
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const qrGenerated = useRef(false);
+
+  useEffect(() => {
+    if (lineItems.length === 0) return;
+    qrGenerated.current = false;
+    const qrData = JSON.stringify({
+      inv: invoiceNumber.toString(),
+      store: store?.name ?? "",
+      date: date.toISOString().slice(0, 10),
+      total: Number(grandTotal) / 100,
+      gst: Number(isIgst ? totalIgst : totalCgst + totalSgst) / 100,
+      customer: customerName ?? "",
+    });
+    generateQrDataUrl(qrData, 80)
+      .then((url) => {
+        setQrDataUrl(url);
+        qrGenerated.current = true;
+      })
+      .catch(() => setQrDataUrl(""));
+  }, [
+    invoiceNumber,
+    store,
+    date,
+    grandTotal,
+    totalIgst,
+    totalCgst,
+    totalSgst,
+    customerName,
+    isIgst,
+    lineItems.length,
+  ]);
 
   return (
     <div
@@ -290,6 +364,22 @@ export default function ThermalReceipt({
         ))
       )}
 
+      {/* Task 7: Total items and total qty */}
+      {lineItems.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: "9px",
+            color: "#555",
+            marginTop: "3px",
+          }}
+        >
+          <span>Total Items: {totalItems}</span>
+          <span>Total Qty: {totalQty}</span>
+        </div>
+      )}
+
       <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
 
       {/* Subtotal */}
@@ -304,7 +394,68 @@ export default function ThermalReceipt({
         <span>{fmt(subtotal)}</span>
       </div>
 
-      {/* GST Breakdown */}
+      {/* Task 6: HSN-wise GST breakdown */}
+      {hsnBreakdown.size > 0 && (
+        <>
+          <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: "9px",
+              fontWeight: "bold",
+              letterSpacing: "1px",
+              marginBottom: "3px",
+            }}
+          >
+            -- HSN-wise GST --
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: "8px",
+              fontWeight: "bold",
+              color: "#555",
+              borderBottom: "1px solid #000",
+              paddingBottom: "1px",
+              marginBottom: "2px",
+            }}
+          >
+            <span style={{ flex: 2 }}>HSN</span>
+            <span style={{ flex: 2, textAlign: "right" }}>Taxable</span>
+            <span style={{ flex: 1, textAlign: "center" }}>GST%</span>
+            <span style={{ flex: 2, textAlign: "right" }}>Tax Amt</span>
+          </div>
+          {Array.from(hsnBreakdown.entries()).map(([hsn, vals]) => {
+            const taxAmt = isIgst ? vals.igst : vals.cgst + vals.sgst;
+            return (
+              <div
+                key={`hsn-${hsn}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "9px",
+                }}
+              >
+                <span style={{ flex: 2 }}>{hsn}</span>
+                <span style={{ flex: 2, textAlign: "right" }}>
+                  {fmt(vals.taxable)}
+                </span>
+                <span style={{ flex: 1, textAlign: "center" }}>
+                  {vals.gstRate}%
+                </span>
+                <span style={{ flex: 2, textAlign: "right" }}>
+                  {fmt(taxAmt)}
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      <div style={{ borderTop: "1px dashed #000", margin: "5px 0" }} />
+
+      {/* GST Rate Breakdown */}
       {Array.from(gstBreakdown.entries()).map(([rate, vals]) => (
         <div key={rate}>
           {isIgst ? (
@@ -423,6 +574,32 @@ export default function ThermalReceipt({
           ** Thank You, Visit Again **
         </div>
       </div>
+
+      {/* Task 8: QR Code at bottom */}
+      {qrDataUrl && (
+        <div
+          style={{
+            textAlign: "center",
+            marginTop: "8px",
+            paddingTop: "6px",
+            borderTop: "1px dashed #000",
+          }}
+        >
+          <img
+            src={qrDataUrl}
+            alt="Bill QR"
+            style={{
+              width: "60px",
+              height: "60px",
+              display: "block",
+              margin: "0 auto 2px",
+            }}
+          />
+          <div style={{ fontSize: "8px", color: "#888" }}>
+            Scan for bill details
+          </div>
+        </div>
+      )}
     </div>
   );
 }

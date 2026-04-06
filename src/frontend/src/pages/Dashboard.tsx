@@ -22,6 +22,11 @@ import {
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import {
+  formatBatchDate,
+  getBatchExpiryStatus,
+  getBatches,
+} from "../hooks/useBatchInventory";
+import {
   useGetMyCredits,
   useGetProducts,
   useGetStoreSummary,
@@ -42,6 +47,16 @@ function ErrorBox({ title, message }: { title: string; message: string }) {
       </div>
     </div>
   );
+}
+
+interface ExpiryEntry {
+  productName: string;
+  sku: string;
+  batchId: string;
+  expiryDate: string;
+  qty: number;
+  status: "expired" | "expiring" | "ok";
+  daysLeft: number;
 }
 
 interface Props {
@@ -67,7 +82,7 @@ export default function Dashboard({ onNavigate }: Props) {
     localStorage.getItem("store_logo"),
   );
 
-  // Listen for logo updates (e.g. after store setup saves)
+  // Listen for logo updates
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "store_logo") {
@@ -75,7 +90,6 @@ export default function Dashboard({ onNavigate }: Props) {
       }
     };
     window.addEventListener("storage", onStorage);
-    // Also poll once when summary arrives (store setup might have saved logo without StorageEvent)
     if (summary) {
       setStoreLogo(localStorage.getItem("store_logo"));
     }
@@ -85,7 +99,6 @@ export default function Dashboard({ onNavigate }: Props) {
   const lowStockItems = products.filter((p) => Number(p.stockQty) < 10);
   const hasShownLowStockRef = useRef(false);
 
-  // Show low stock popup once on initial load
   useEffect(() => {
     if (lowStockItems.length > 0 && !hasShownLowStockRef.current) {
       hasShownLowStockRef.current = true;
@@ -136,15 +149,12 @@ export default function Dashboard({ onNavigate }: Props) {
     );
   }
 
-  // "Store not found" is a normal state (new user, no store registered yet)
   const isStoreNotFound =
     summaryError &&
     String(summaryError).toLowerCase().includes("store not found");
 
-  // Only treat as real error if it's NOT a "store not found" message
   const hasError = summaryError && !isStoreNotFound;
 
-  // Show no-store UI if the error says store not found, or if there's no summary and no other error
   const noStore =
     isStoreNotFound || (!hasError && !summary && !isLoading && !actorFetching);
 
@@ -168,7 +178,6 @@ export default function Dashboard({ onNavigate }: Props) {
           </p>
         )}
 
-        {/* Only show error boxes for real (unexpected) errors */}
         {summaryError && !isStoreNotFound && (
           <ErrorBox
             title="Data Fetch Error (storeSummary)"
@@ -176,7 +185,6 @@ export default function Dashboard({ onNavigate }: Props) {
           />
         )}
 
-        {/* Always show the setup button when there's no store */}
         {(noStore || !hasError) && (
           <Button
             onClick={() => onNavigate("store")}
@@ -241,6 +249,78 @@ export default function Dashboard({ onNavigate }: Props) {
       textColor: "text-white",
     },
   ];
+
+  // Task 3: Batch-wise expiry entries
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiryEntries: ExpiryEntry[] = [];
+  for (const p of products) {
+    const batches = getBatches(p.sku);
+    if (batches.length > 0) {
+      // Use batch data
+      for (const batch of batches) {
+        const status = getBatchExpiryStatus(batch.expiryDate);
+        if (status === "ok") continue; // only show expired/expiring
+        const expDate = batch.expiryDate ? new Date(batch.expiryDate) : null;
+        const daysLeft = expDate
+          ? Math.floor(
+              (expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+            )
+          : 0;
+        expiryEntries.push({
+          productName: p.name,
+          sku: p.sku,
+          batchId: `${batch.batchId.split("-").slice(-1)[0]}…`,
+          expiryDate: batch.expiryDate,
+          qty: batch.stockQty,
+          status,
+          daysLeft,
+        });
+      }
+    } else {
+      // Fall back to legacy expiry_{sku}
+      const d = localStorage.getItem(`expiry_${p.sku}`);
+      if (!d) continue;
+      const expDate = new Date(d);
+      expDate.setHours(0, 0, 0, 0);
+      const daysLeft = Math.floor(
+        (expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      if (expDate < today) {
+        expiryEntries.push({
+          productName: p.name,
+          sku: p.sku,
+          batchId: "—",
+          expiryDate: d,
+          qty: Number(p.stockQty),
+          status: "expired",
+          daysLeft,
+        });
+      } else if (daysLeft <= 30) {
+        expiryEntries.push({
+          productName: p.name,
+          sku: p.sku,
+          batchId: "—",
+          expiryDate: d,
+          qty: Number(p.stockQty),
+          status: "expiring",
+          daysLeft,
+        });
+      }
+    }
+  }
+
+  // Sort by expiry date ascending (soonest/most expired first)
+  expiryEntries.sort((a, b) => {
+    if (!a.expiryDate && !b.expiryDate) return 0;
+    if (!a.expiryDate) return 1;
+    if (!b.expiryDate) return -1;
+    return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+  });
+
+  const expiredEntries = expiryEntries.filter((e) => e.status === "expired");
+  const expiringEntries = expiryEntries.filter((e) => e.status === "expiring");
 
   return (
     <motion.div
@@ -459,122 +539,125 @@ export default function Dashboard({ onNavigate }: Props) {
         ))}
       </div>
 
-      {/* Product Expiry Alert */}
-      {(() => {
-        const today = new Date();
-        const expiredProducts = products.filter((p) => {
-          const d = localStorage.getItem(`expiry_${p.sku}`);
-          return d && new Date(d) < today;
-        });
-        const soonExpiringProducts = products.filter((p) => {
-          const d = localStorage.getItem(`expiry_${p.sku}`);
-          if (!d) return false;
-          const exp = new Date(d);
-          return (
-            exp >= today &&
-            (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) <= 30
-          );
-        });
-        if (expiredProducts.length === 0 && soonExpiringProducts.length === 0)
-          return null;
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="rounded-2xl border border-border bg-white shadow-card overflow-hidden"
-            data-ocid="dashboard.expiry.card"
-          >
-            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-saffron" />
-                <h2 className="font-display font-semibold text-foreground text-base">
-                  Product Expiry Alert
-                </h2>
+      {/* Task 3: Batch-wise Expiry Alert Section */}
+      {(expiredEntries.length > 0 || expiringEntries.length > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-2xl border border-border bg-white shadow-card overflow-hidden"
+          data-ocid="dashboard.expiry.card"
+        >
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-saffron" />
+              <h2 className="font-display font-semibold text-foreground text-base">
+                Batch-wise Expiry Alert
+              </h2>
+            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+              {expiryEntries.length} batch
+              {expiryEntries.length !== 1 ? "es" : ""}
+            </span>
+          </div>
+          <div className="p-4 space-y-4">
+            {expiredEntries.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">
+                  Expired Batches ({expiredEntries.length})
+                </p>
+                <div className="max-h-52 overflow-y-auto space-y-1.5">
+                  {expiredEntries.map((entry, idx) => (
+                    <div
+                      key={`expired-${entry.sku}-${entry.batchId}-${idx}`}
+                      className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2"
+                      data-ocid={`dashboard.expiry.item.${idx + 1}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {entry.productName}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          SKU: {entry.sku}
+                          {entry.batchId !== "—" && (
+                            <span className="ml-2 font-mono">
+                              Batch: {entry.batchId}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
+                          Qty: {entry.qty}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {entry.expiryDate
+                            ? formatBatchDate(entry.expiryDate)
+                            : "—"}
+                        </span>
+                        <span className="text-xs bg-red-200 text-red-800 px-2 py-0.5 rounded-full font-semibold">
+                          Expired
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-                {expiredProducts.length + soonExpiringProducts.length} items
-              </span>
-            </div>
-            <div className="p-4 space-y-4">
-              {expiredProducts.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">
-                    Expired Products ({expiredProducts.length})
-                  </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {expiredProducts.map((p) => {
-                      return (
-                        <div
-                          key={p.sku}
-                          className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-foreground truncate">
-                              {p.name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              SKU: {p.sku}
-                            </div>
-                          </div>
-                          <span className="text-xs bg-muted px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
-                            Qty: {Number(p.stockQty)}
-                          </span>
-                          <span className="text-xs bg-red-200 text-red-800 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
-                            Expired
-                          </span>
+            )}
+            {expiringEntries.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">
+                  Expiring Within 30 Days ({expiringEntries.length})
+                </p>
+                <div className="max-h-52 overflow-y-auto space-y-1.5">
+                  {expiringEntries.map((entry, idx) => (
+                    <div
+                      key={`expiring-${entry.sku}-${entry.batchId}-${idx}`}
+                      className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2"
+                      data-ocid={`dashboard.expiry.item.${expiredEntries.length + idx + 1}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {entry.productName}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {soonExpiringProducts.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">
-                    Expiring Within 30 Days ({soonExpiringProducts.length})
-                  </p>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {soonExpiringProducts.map((p) => {
-                      const d = localStorage.getItem(`expiry_${p.sku}`) ?? "";
-                      return (
-                        <div
-                          key={p.sku}
-                          className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-foreground truncate">
-                              {p.name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              SKU: {p.sku}
-                            </div>
-                          </div>
-                          <span className="text-xs bg-muted px-1.5 py-0.5 rounded font-medium whitespace-nowrap">
-                            Qty: {Number(p.stockQty)}
-                          </span>
-                          <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
-                            Exp: {d}
-                          </span>
+                        <div className="text-xs text-muted-foreground">
+                          SKU: {entry.sku}
+                          {entry.batchId !== "—" && (
+                            <span className="ml-2 font-mono">
+                              Batch: {entry.batchId}
+                            </span>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded font-medium">
+                          Qty: {entry.qty}
+                        </span>
+                        <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+                          {entry.daysLeft === 0
+                            ? "Exp today"
+                            : entry.daysLeft > 0
+                              ? `${entry.daysLeft}d left`
+                              : "Expired"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onNavigate("products")}
-                className="w-full h-8 text-xs border-saffron/30 text-saffron-dark hover:bg-saffron-light"
-                data-ocid="dashboard.expiry.button"
-              >
-                <Package className="w-3.5 h-3.5 mr-1" /> Go to Products
-              </Button>
-            </div>
-          </motion.div>
-        );
-      })()}
+              </div>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onNavigate("products")}
+              className="w-full h-8 text-xs border-saffron/30 text-saffron-dark hover:bg-saffron-light"
+              data-ocid="dashboard.expiry.button"
+            >
+              <Package className="w-3.5 h-3.5 mr-1" /> Go to Products
+            </Button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Low Stock Banner (after dismissing popup) */}
       {lowStockItems.length > 0 && lowStockDismissed && (

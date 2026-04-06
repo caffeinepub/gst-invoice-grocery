@@ -67,7 +67,7 @@ import {
 
 const GST_RATES = [0, 5, 12, 18, 28];
 
-// ── Expiry helpers ──────────────────────────────────────────────────────
+// ── Expiry helpers ────────────────────────────────────────────────────
 function getExpiryKey(sku: string) {
   return `expiry_${sku}`;
 }
@@ -109,7 +109,7 @@ function formatExpiryDisplay(dateStr: string): string {
   });
 }
 
-// ── Product form ─────────────────────────────────────────────────────────
+// ── Product form ─────────────────────────────────────────────────────
 interface ProductForm {
   name: string;
   hsnCode: string;
@@ -173,7 +173,7 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
     });
 }
 
-// ── CDN loader for xlsx ─────────────────────────────────────────────────────
+// ── CDN loader for xlsx ───────────────────────────────────────────────
 let xlsxPromise: Promise<boolean> | null = null;
 function loadXlsx(): Promise<boolean> {
   if (xlsxPromise) return xlsxPromise;
@@ -192,7 +192,7 @@ function loadXlsx(): Promise<boolean> {
   return xlsxPromise;
 }
 
-// ── Expiry Badge component ───────────────────────────────────────────────────
+// ── Expiry Badge component ───────────────────────────────────────────────
 function ExpiryBadge({
   status,
 }: { status: ExpiryStatus | "expired" | "expiring" | "ok" }) {
@@ -213,7 +213,7 @@ function ExpiryBadge({
   return null;
 }
 
-// ── Batch row sub-component ───────────────────────────────────────────────────
+// ── Batch row sub-component ─────────────────────────────────────────────────
 interface BatchPanelProps {
   sku: string;
   productName: string;
@@ -461,10 +461,8 @@ export default function Products() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  // Batch panel expand tracking
   const [expandedSku, setExpandedSku] = useState<string | null>(null);
 
-  // Import state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -475,7 +473,6 @@ export default function Products() {
   } | null>(null);
   const [importing, setImporting] = useState(false);
 
-  // Attach expiry info and sort: expired → expiring → ok
   const productsWithExpiry = products
     .map((p) => {
       const expiryDate = getExpiry(p.sku);
@@ -691,6 +688,72 @@ export default function Products() {
     XLS.writeFile(wb, "product_import_template.xlsx");
   };
 
+  // Task 2: Export all products to Excel
+  const exportProducts = async () => {
+    if (products.length === 0) {
+      toast.error("No products to export.");
+      return;
+    }
+    const ok = await loadXlsx();
+    if (!ok) {
+      toast.error(
+        "Could not load Excel library. Check your internet connection.",
+      );
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const XLS = (window as any).XLSX;
+
+    const headers = [
+      "Product Name",
+      "Barcode (SKU)",
+      "MRP (₹)",
+      "Stock Qty",
+      "HSN Code",
+      "GST Rate",
+      "Expiry Date",
+      "Batch Count",
+      "Total Batch Stock",
+    ];
+
+    const rows = products.map((p) => {
+      const batchList = getBatches(p.sku);
+      const batchCount = batchList.length;
+      const totalBatchStock =
+        batchCount > 0 ? batchList.reduce((sum, b) => sum + b.stockQty, 0) : 0;
+      const expiryDate = getExpiry(p.sku) || "";
+      return [
+        p.name,
+        p.sku,
+        (Number(p.price) / 100).toFixed(2),
+        Number(p.stockQty),
+        p.hsnCode,
+        Number(p.gstRate),
+        expiryDate,
+        batchCount,
+        totalBatchStock,
+      ];
+    });
+
+    const ws = XLS.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 18 },
+    ];
+    const wb = XLS.utils.book_new();
+    XLS.utils.book_append_sheet(wb, ws, "Products");
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    XLS.writeFile(wb, `product_list_export_${dateStr}.xlsx`);
+    toast.success(`${products.length} products exported!`);
+  };
+
   const isPending = addMutation.isPending || updateMutation.isPending;
 
   const expiredCount = productsWithExpiry.filter(
@@ -751,6 +814,16 @@ export default function Products() {
                   data-ocid="products.search_input"
                 />
               </div>
+              {/* Task 2: Export Products button */}
+              <Button
+                variant="outline"
+                onClick={exportProducts}
+                disabled={products.length === 0}
+                className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                title="Export all products to Excel"
+              >
+                <Download className="w-4 h-4 mr-1" /> Export Products
+              </Button>
               <Button
                 variant="outline"
                 onClick={downloadTemplate}
@@ -836,7 +909,7 @@ export default function Products() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             className={`border-b border-border transition-colors ${
-                              isExpandedRow(isExpanded)
+                              isExpanded
                                 ? "bg-amber-50/60"
                                 : isExpiredRow
                                   ? "bg-red-50 hover:bg-red-100/60"
@@ -1324,10 +1397,4 @@ export default function Products() {
   );
 }
 
-// Helper to check if row is highlighted for batch panel
-function isExpandedRow(isExpanded: boolean): boolean {
-  return isExpanded;
-}
-
-// Re-export hasAnyBatches for use in component logic
 export { hasAnyBatches };
