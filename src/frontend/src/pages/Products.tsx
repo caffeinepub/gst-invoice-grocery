@@ -1234,12 +1234,7 @@ export default function Products() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="p-sku">
-                  SKU / Barcode *{" "}
-                  <span className="text-xs text-muted-foreground font-normal">
-                    (scan barcode)
-                  </span>
-                </Label>
+                <Label htmlFor="p-sku">SKU / Barcode *</Label>
                 <Input
                   id="p-sku"
                   value={form.sku}

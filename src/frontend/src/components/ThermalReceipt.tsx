@@ -31,6 +31,7 @@ export interface InvoiceLineItemDisplay {
   cgstAmt: bigint;
   sgstAmt: bigint;
   igstAmt: bigint;
+  costPrice?: bigint; // purchase cost per unit in paise (optional)
 }
 
 export function invoiceToDisplay(inv: Invoice): Omit<Props, "store"> {
@@ -360,6 +361,14 @@ export default function ThermalReceipt({
                 {fmt(item.qty * item.rate)}
               </span>
             </div>
+            {item.costPrice !== undefined && item.costPrice > 0n && (
+              <div
+                style={{ fontSize: "9px", color: "#666", paddingLeft: "4px" }}
+              >
+                Cost: {fmt(item.costPrice)} | Margin:{" "}
+                {fmt(item.rate - item.costPrice)}
+              </div>
+            )}
           </div>
         ))
       )}
@@ -509,6 +518,64 @@ export default function ThermalReceipt({
         <span>Total GST</span>
         <span>{fmt(isIgst ? totalIgst : totalCgst + totalSgst)}</span>
       </div>
+
+      {lineItems.some(
+        (li) => li.costPrice !== undefined && li.costPrice > 0n,
+      ) && (
+        <>
+          <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
+          <div
+            style={{
+              fontSize: "9px",
+              color: "#555",
+              marginBottom: "2px",
+              fontWeight: "bold",
+              letterSpacing: "1px",
+              textAlign: "center",
+            }}
+          >
+            -- Cost Summary --
+          </div>
+          {lineItems
+            .filter((li) => li.costPrice !== undefined && li.costPrice > 0n)
+            .map((li) => (
+              <div
+                key={`cost-${li.productName}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "9px",
+                }}
+              >
+                <span style={{ flex: 3 }}>{li.productName}</span>
+                <span style={{ flex: 2, textAlign: "right" }}>
+                  Cost: {fmt(li.costPrice! * li.qty)}
+                </span>
+              </div>
+            ))}
+          {(() => {
+            const totalCostVal = lineItems.reduce(
+              (sum, li) =>
+                li.costPrice !== undefined ? sum + li.costPrice * li.qty : sum,
+              0n,
+            );
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                  fontWeight: "600",
+                  marginTop: "2px",
+                }}
+              >
+                <span>Total Cost</span>
+                <span>{fmt(totalCostVal)}</span>
+              </div>
+            );
+          })()}
+        </>
+      )}
 
       <div style={{ borderTop: "2px solid #000", margin: "5px 0" }} />
 

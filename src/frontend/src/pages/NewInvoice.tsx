@@ -62,6 +62,7 @@ interface CartItem {
   qty: number;
   batchId?: string;
   batchExpiryDate?: string;
+  costPrice?: number; // purchase cost per unit in rupees (not paise)
 }
 
 function isProductExpired(sku: string): boolean {
@@ -94,6 +95,10 @@ function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
     cgstAmt,
     sgstAmt,
     igstAmt,
+    costPrice:
+      item.costPrice !== undefined
+        ? BigInt(Math.round(item.costPrice * 100))
+        : undefined,
   };
 }
 
@@ -298,6 +303,18 @@ export default function NewInvoice() {
           ? !(i.product.sku === sku && i.batchId === batchId)
           : i.product.sku !== sku,
       ),
+    );
+  };
+
+  const setCostPrice = (cartKey: string, cost: number | undefined) => {
+    const { sku, batchId } = parseSelectedValue(cartKey);
+    setCart((prev) =>
+      prev.map((i) => {
+        const match = batchId
+          ? i.product.sku === sku && i.batchId === batchId
+          : i.product.sku === sku;
+        return match ? { ...i, costPrice: cost } : i;
+      }),
     );
   };
 
@@ -794,6 +811,7 @@ export default function NewInvoice() {
                         <TableHead>HSN</TableHead>
                         <TableHead className="text-center">Qty</TableHead>
                         <TableHead className="text-right">Rate</TableHead>
+                        <TableHead className="text-right">Cost (₹)</TableHead>
                         <TableHead className="text-center">GST%</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                         <TableHead />
@@ -870,6 +888,26 @@ export default function NewInvoice() {
                             </TableCell>
                             <TableCell className="text-right">
                               {fmt(item.product.price)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.costPrice ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setCostPrice(
+                                    cartKey,
+                                    val === ""
+                                      ? undefined
+                                      : Number.parseFloat(val),
+                                  );
+                                }}
+                                placeholder="0.00"
+                                className="w-20 text-right h-7 text-sm p-1"
+                                data-ocid="invoice.input"
+                              />
                             </TableCell>
                             <TableCell className="text-center text-sm">
                               {item.product.gstRate.toString()}%
