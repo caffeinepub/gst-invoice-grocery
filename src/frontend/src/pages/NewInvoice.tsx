@@ -78,18 +78,27 @@ function isProductExpired(sku: string): boolean {
 function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
   const { product, qty } = item;
   const qtyBig = BigInt(qty);
-  const rate = product.price;
-  const taxable = qtyBig * rate;
+  const mrp = product.price; // always use MRP for rate display
+
+  // GST is calculated on cost price if provided, otherwise on MRP
+  const costBase =
+    item.costPrice !== undefined && item.costPrice > 0
+      ? BigInt(Math.round(item.costPrice * 100))
+      : mrp;
+
+  const taxable = qtyBig * costBase;
   const gstRate = product.gstRate;
   const cgstAmt = isIgst ? 0n : (taxable * gstRate) / 200n;
   const sgstAmt = isIgst ? 0n : (taxable * gstRate) / 200n;
   const igstAmt = isIgst ? (taxable * gstRate) / 100n : 0n;
+  // lineTotal = qty * MRP (for customer-facing amount) + GST on cost
+  // Actually: we display line total as qty*cost + GST, but show MRP separately
   const lineTotal = taxable + (isIgst ? igstAmt : cgstAmt + sgstAmt);
   return {
     productName: product.name,
     hsnCode: product.hsnCode,
     qty: qtyBig,
-    rate,
+    rate: mrp, // MRP for display on receipt
     gstRate,
     lineTotal,
     cgstAmt,
@@ -323,8 +332,17 @@ export default function NewInvoice() {
     [cart, isIgst],
   );
 
+  // Subtotal = sum of (qty * costBase) per line item — i.e. taxable base
   const subtotal = useMemo(
-    () => lineItems.reduce((sum, li) => sum + li.qty * li.rate, 0n),
+    () =>
+      lineItems.reduce((sum, li) => {
+        // costPrice in paise per unit; if missing fall back to rate (MRP)
+        const base =
+          li.costPrice !== undefined && li.costPrice > 0n
+            ? li.costPrice
+            : li.rate;
+        return sum + li.qty * base;
+      }, 0n),
     [lineItems],
   );
   const totalCgst = useMemo(
@@ -810,7 +828,7 @@ export default function NewInvoice() {
                         <TableHead>Product</TableHead>
                         <TableHead>HSN</TableHead>
                         <TableHead className="text-center">Qty</TableHead>
-                        <TableHead className="text-right">Rate</TableHead>
+                        <TableHead className="text-right">MRP</TableHead>
                         <TableHead className="text-right">Cost (₹)</TableHead>
                         <TableHead className="text-center">GST%</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
@@ -887,27 +905,32 @@ export default function NewInvoice() {
                               </div>
                             </TableCell>
                             <TableCell className="text-right">
-                              {fmt(item.product.price)}
+                              <div>{fmt(item.product.price)}</div>
                             </TableCell>
                             <TableCell className="text-right">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.costPrice ?? ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setCostPrice(
-                                    cartKey,
-                                    val === ""
-                                      ? undefined
-                                      : Number.parseFloat(val),
-                                  );
-                                }}
-                                placeholder="0.00"
-                                className="w-20 text-right h-7 text-sm p-1"
-                                data-ocid="invoice.input"
-                              />
+                              <div className="space-y-0.5">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.costPrice ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCostPrice(
+                                      cartKey,
+                                      val === ""
+                                        ? undefined
+                                        : Number.parseFloat(val),
+                                    );
+                                  }}
+                                  placeholder="0.00"
+                                  className="w-20 text-right h-7 text-sm p-1"
+                                  data-ocid="invoice.input"
+                                />
+                                <div className="text-xs text-muted-foreground text-right">
+                                  MRP: {fmt(item.product.price)}
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell className="text-center text-sm">
                               {item.product.gstRate.toString()}%

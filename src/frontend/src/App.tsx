@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import {
-  Barcode,
   FileText,
   HelpCircle,
   LayoutDashboard,
@@ -19,7 +18,6 @@ import ShyamaChatbot from "./components/ShyamaChatbot";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetMyCredits, useIsCallerAdmin } from "./hooks/useQueries";
 import AdminPanel from "./pages/AdminPanel";
-import BarcodeLabel from "./pages/BarcodeLabel";
 import Dashboard from "./pages/Dashboard";
 import HelpSupport from "./pages/HelpSupport";
 import InactiveAccount from "./pages/InactiveAccount";
@@ -34,14 +32,13 @@ const BASE_TABS = [
   { id: "products", label: "Products", icon: Package },
   { id: "invoice", label: "New Bill", icon: Receipt },
   { id: "invoices", label: "Invoices", icon: FileText },
-  { id: "barcode", label: "Barcode", icon: Barcode },
   { id: "help", label: "Help", icon: HelpCircle },
 ] as const;
 
 const ADMIN_TAB = { id: "admin", label: "Admin", icon: ShieldCheck } as const;
 
 type BaseTabId = (typeof BASE_TABS)[number]["id"];
-type TabId = BaseTabId | "admin" | "help";
+type TabId = BaseTabId | "admin";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
@@ -253,7 +250,6 @@ export default function App() {
               {activeTab === "products" && <Products />}
               {activeTab === "invoice" && <NewInvoice />}
               {activeTab === "invoices" && <Invoices />}
-              {activeTab === "barcode" && <BarcodeLabel />}
               {activeTab === "admin" && <AdminPanel />}
               {activeTab === "help" && <HelpSupport />}
             </motion.div>

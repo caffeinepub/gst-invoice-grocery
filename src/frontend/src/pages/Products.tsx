@@ -11,6 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Product } from "../backend.d";
+import ManagerPinDialog from "../components/ManagerPinDialog";
 import {
   type ProductBatchEntry,
   addBatch,
@@ -67,7 +69,7 @@ import {
 
 const GST_RATES = [0, 5, 12, 18, 28];
 
-// ── Expiry helpers ────────────────────────────────────────────────────
+// ── Expiry helpers ────────────────────────────────────
 function getExpiryKey(sku: string) {
   return `expiry_${sku}`;
 }
@@ -109,7 +111,7 @@ function formatExpiryDisplay(dateStr: string): string {
   });
 }
 
-// ── Product form ─────────────────────────────────────────────────────
+// ── Product form ─────────────────────────────────────
 interface ProductForm {
   name: string;
   hsnCode: string;
@@ -173,7 +175,7 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
     });
 }
 
-// ── CDN loader for xlsx ───────────────────────────────────────────────
+// ── CDN loader for xlsx ──────────────────────────────────
 let xlsxPromise: Promise<boolean> | null = null;
 function loadXlsx(): Promise<boolean> {
   if (xlsxPromise) return xlsxPromise;
@@ -192,7 +194,7 @@ function loadXlsx(): Promise<boolean> {
   return xlsxPromise;
 }
 
-// ── Expiry Badge component ───────────────────────────────────────────────
+// ── Expiry Badge component ─────────────────────────────────────
 function ExpiryBadge({
   status,
 }: { status: ExpiryStatus | "expired" | "expiring" | "ok" }) {
@@ -213,7 +215,7 @@ function ExpiryBadge({
   return null;
 }
 
-// ── Batch row sub-component ─────────────────────────────────────────────────
+// ── Batch row sub-component ───────────────────────────────────────
 interface BatchPanelProps {
   sku: string;
   productName: string;
@@ -459,7 +461,16 @@ export default function Products() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+
+  // Single delete state
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deletePinOpen, setDeletePinOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  // Bulk delete state
+  const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
+  const [bulkDeletePinOpen, setBulkDeletePinOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [expandedSku, setExpandedSku] = useState<string | null>(null);
 
@@ -504,6 +515,29 @@ export default function Products() {
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
       p.hsnCode.includes(search),
   );
+
+  // Select-all logic
+  const allSkus = filtered.map((p) => p.sku);
+  const allSelected =
+    allSkus.length > 0 && allSkus.every((s) => selectedSkus.has(s));
+  const someSelected = selectedSkus.size > 0;
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedSkus(new Set());
+    } else {
+      setSelectedSkus(new Set(allSkus));
+    }
+  }
+
+  function toggleSelect(sku: string) {
+    setSelectedSkus((prev) => {
+      const next = new Set(prev);
+      if (next.has(sku)) next.delete(sku);
+      else next.add(sku);
+      return next;
+    });
+  }
 
   const openAdd = () => {
     setEditProduct(null);
@@ -558,6 +592,7 @@ export default function Products() {
     }
   };
 
+  // Single delete: called after PIN verified + confirmation
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
@@ -568,8 +603,25 @@ export default function Products() {
       toast.error("Failed to delete product.");
     } finally {
       setDeleteTarget(null);
+      setDeleteConfirmOpen(false);
     }
   };
+
+  // Bulk delete: called after PIN verified
+  async function handleBulkDelete() {
+    setBulkDeleting(true);
+    for (const sku of Array.from(selectedSkus)) {
+      try {
+        await deleteMutation.mutateAsync(sku);
+        localStorage.removeItem(getExpiryKey(sku));
+      } catch {
+        toast.error(`Failed to delete ${sku}`);
+      }
+    }
+    setSelectedSkus(new Set());
+    setBulkDeleting(false);
+    toast.success("Selected products deleted.");
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -688,7 +740,6 @@ export default function Products() {
     XLS.writeFile(wb, "product_import_template.xlsx");
   };
 
-  // Task 2: Export all products to Excel
   const exportProducts = async () => {
     if (products.length === 0) {
       toast.error("No products to export.");
@@ -814,7 +865,6 @@ export default function Products() {
                   data-ocid="products.search_input"
                 />
               </div>
-              {/* Task 2: Export Products button */}
               <Button
                 variant="outline"
                 onClick={exportProducts}
@@ -855,6 +905,37 @@ export default function Products() {
               </Button>
             </div>
           </div>
+
+          {/* Bulk delete bar */}
+          {someSelected && (
+            <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border">
+              <span className="text-sm text-muted-foreground">
+                {selectedSkus.size} product{selectedSkus.size !== 1 ? "s" : ""}{" "}
+                selected
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeletePinOpen(true)}
+                disabled={bulkDeleting}
+                data-ocid="products.delete_button"
+              >
+                {bulkDeleting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                Delete Selected ({selectedSkus.size})
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedSkus(new Set())}
+              >
+                Clear Selection
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -881,6 +962,14 @@ export default function Products() {
               <Table data-ocid="products.table">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all"
+                        data-ocid="products.checkbox"
+                      />
+                    </TableHead>
                     <TableHead className="font-semibold">
                       Product Name
                     </TableHead>
@@ -900,6 +989,7 @@ export default function Products() {
                       const isExpiredRow = p.expiryStatus === "expired";
                       const isExpiringRow = p.expiryStatus === "expiring";
                       const isExpanded = expandedSku === p.sku;
+                      const isChecked = selectedSkus.has(p.sku);
 
                       return (
                         <>
@@ -909,16 +999,26 @@ export default function Products() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             className={`border-b border-border transition-colors ${
-                              isExpanded
-                                ? "bg-amber-50/60"
-                                : isExpiredRow
-                                  ? "bg-red-50 hover:bg-red-100/60"
-                                  : isExpiringRow
-                                    ? "bg-amber-50 hover:bg-amber-100/60"
-                                    : "hover:bg-muted/30"
+                              isChecked
+                                ? "bg-red-50/40"
+                                : isExpanded
+                                  ? "bg-amber-50/60"
+                                  : isExpiredRow
+                                    ? "bg-red-50 hover:bg-red-100/60"
+                                    : isExpiringRow
+                                      ? "bg-amber-50 hover:bg-amber-100/60"
+                                      : "hover:bg-muted/30"
                             }`}
                             data-ocid={`products.item.${i + 1}`}
                           >
+                            <TableCell className="w-10">
+                              <Checkbox
+                                checked={isChecked}
+                                onCheckedChange={() => toggleSelect(p.sku)}
+                                aria-label={`Select ${p.name}`}
+                                data-ocid={`products.checkbox.${i + 1}`}
+                              />
+                            </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{p.name}</span>
@@ -1021,7 +1121,10 @@ export default function Products() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setDeleteTarget(p.sku)}
+                                  onClick={() => {
+                                    setDeleteTarget(p.sku);
+                                    setDeletePinOpen(true);
+                                  }}
                                   data-ocid={`products.delete_button.${i + 1}`}
                                 >
                                   <Trash2 className="w-4 h-4 text-destructive" />
@@ -1033,7 +1136,7 @@ export default function Products() {
                           {/* Batch panel row */}
                           {isExpanded && (
                             <tr key={`batch-${p.sku}`}>
-                              <td colSpan={9} className="p-0">
+                              <td colSpan={10} className="p-0">
                                 <BatchPanel
                                   sku={p.sku}
                                   productName={p.name}
@@ -1357,10 +1460,27 @@ export default function Products() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm */}
+      {/* Manager PIN dialog for single delete */}
+      <ManagerPinDialog
+        open={deletePinOpen}
+        onOpenChange={(o) => {
+          setDeletePinOpen(o);
+          if (!o) setDeleteTarget(null);
+        }}
+        onSuccess={() => {
+          setDeletePinOpen(false);
+          setDeleteConfirmOpen(true);
+        }}
+        title="Delete Product"
+      />
+
+      {/* Confirm single delete after PIN */}
       <AlertDialog
-        open={!!deleteTarget}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        open={deleteConfirmOpen}
+        onOpenChange={(o) => {
+          setDeleteConfirmOpen(o);
+          if (!o) setDeleteTarget(null);
+        }}
       >
         <AlertDialogContent data-ocid="products.dialog">
           <AlertDialogHeader>
@@ -1371,7 +1491,13 @@ export default function Products() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-ocid="products.cancel_button">
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteTarget(null);
+                setDeleteConfirmOpen(false);
+              }}
+              data-ocid="products.cancel_button"
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
@@ -1388,6 +1514,17 @@ export default function Products() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Manager PIN dialog for bulk delete */}
+      <ManagerPinDialog
+        open={bulkDeletePinOpen}
+        onOpenChange={setBulkDeletePinOpen}
+        onSuccess={() => {
+          setBulkDeletePinOpen(false);
+          handleBulkDelete();
+        }}
+        title="Delete Selected Products"
+      />
     </motion.div>
   );
 }

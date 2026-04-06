@@ -67,7 +67,12 @@ function groupByGstRate(items: InvoiceLineItemDisplay[]) {
   >();
   for (const item of items) {
     const rate = Number(item.gstRate);
-    const taxable = item.qty * item.rate;
+    // Use costPrice as taxable base if provided, otherwise use MRP
+    const base =
+      item.costPrice !== undefined && item.costPrice > 0n
+        ? item.costPrice
+        : item.rate;
+    const taxable = item.qty * base;
     const existing = map.get(rate) || {
       taxable: 0n,
       cgst: 0n,
@@ -98,7 +103,12 @@ function groupByHsn(items: InvoiceLineItemDisplay[]) {
   for (const item of items) {
     const hsn = item.hsnCode || "—";
     const rate = Number(item.gstRate);
-    const taxable = item.qty * item.rate;
+    // Use costPrice as taxable base if provided, otherwise use MRP
+    const base =
+      item.costPrice !== undefined && item.costPrice > 0n
+        ? item.costPrice
+        : item.rate;
+    const taxable = item.qty * base;
     const existing = map.get(hsn) || {
       taxable: 0n,
       cgst: 0n,
@@ -147,11 +157,11 @@ export default function ThermalReceipt({
           ? "📲"
           : "";
 
-  // Task 7: Total items and total qty
+  // Total items and total qty
   const totalItems = lineItems.length;
   const totalQty = lineItems.reduce((sum, li) => sum + Number(li.qty), 0);
 
-  // Task 8: QR code
+  // QR code with enhanced details
   const [qrDataUrl, setQrDataUrl] = useState("");
   const qrGenerated = useRef(false);
 
@@ -165,6 +175,9 @@ export default function ThermalReceipt({
       total: Number(grandTotal) / 100,
       gst: Number(isIgst ? totalIgst : totalCgst + totalSgst) / 100,
       customer: customerName ?? "",
+      items: lineItems.length,
+      payMode: paymentMode ?? "",
+      gstin: store?.gstin ?? "",
     });
     generateQrDataUrl(qrData, 80)
       .then((url) => {
@@ -183,6 +196,7 @@ export default function ThermalReceipt({
     customerName,
     isIgst,
     lineItems.length,
+    paymentMode,
   ]);
 
   return (
@@ -314,7 +328,7 @@ export default function ThermalReceipt({
       >
         <span style={{ flex: 3 }}>Item</span>
         <span style={{ flex: 1, textAlign: "right" }}>Qty</span>
-        <span style={{ flex: 1, textAlign: "right" }}>Rate</span>
+        <span style={{ flex: 1, textAlign: "right" }}>MRP</span>
         <span style={{ flex: 1, textAlign: "right" }}>Amt</span>
       </div>
 
@@ -333,47 +347,52 @@ export default function ThermalReceipt({
           No items added
         </div>
       ) : (
-        lineItems.map((item) => (
-          <div
-            key={`${item.productName}-${item.hsnCode}`}
-            style={{ marginBottom: "3px" }}
-          >
-            <div style={{ fontSize: "10px", fontWeight: "600" }}>
-              {item.productName}
-            </div>
+        lineItems.map((item) => {
+          const costBase =
+            item.costPrice !== undefined && item.costPrice > 0n
+              ? item.costPrice
+              : item.rate;
+          return (
             <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "10px",
-              }}
+              key={`${item.productName}-${item.hsnCode}`}
+              style={{ marginBottom: "3px" }}
             >
-              <span style={{ flex: 3, color: "#555" }}>
-                HSN:{item.hsnCode} GST:{item.gstRate.toString()}%
-              </span>
-              <span style={{ flex: 1, textAlign: "right" }}>
-                {item.qty.toString()}
-              </span>
-              <span style={{ flex: 1, textAlign: "right" }}>
-                {fmt(item.rate)}
-              </span>
-              <span style={{ flex: 1, textAlign: "right" }}>
-                {fmt(item.qty * item.rate)}
-              </span>
-            </div>
-            {item.costPrice !== undefined && item.costPrice > 0n && (
-              <div
-                style={{ fontSize: "9px", color: "#666", paddingLeft: "4px" }}
-              >
-                Cost: {fmt(item.costPrice)} | Margin:{" "}
-                {fmt(item.rate - item.costPrice)}
+              <div style={{ fontSize: "10px", fontWeight: "600" }}>
+                {item.productName}
               </div>
-            )}
-          </div>
-        ))
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "10px",
+                }}
+              >
+                <span style={{ flex: 3, color: "#555" }}>
+                  HSN:{item.hsnCode} GST:{item.gstRate.toString()}%
+                </span>
+                <span style={{ flex: 1, textAlign: "right" }}>
+                  {item.qty.toString()}
+                </span>
+                <span style={{ flex: 1, textAlign: "right" }}>
+                  {fmt(item.rate)}
+                </span>
+                <span style={{ flex: 1, textAlign: "right" }}>
+                  {fmt(item.qty * costBase)}
+                </span>
+              </div>
+              {item.costPrice !== undefined && item.costPrice > 0n && (
+                <div
+                  style={{ fontSize: "9px", color: "#666", paddingLeft: "4px" }}
+                >
+                  Cost: {fmt(item.costPrice)} | MRP: {fmt(item.rate)}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
 
-      {/* Task 7: Total items and total qty */}
+      {/* Total items and total qty */}
       {lineItems.length > 0 && (
         <div
           style={{
@@ -403,7 +422,7 @@ export default function ThermalReceipt({
         <span>{fmt(subtotal)}</span>
       </div>
 
-      {/* Task 6: HSN-wise GST breakdown */}
+      {/* HSN-wise GST breakdown */}
       {hsnBreakdown.size > 0 && (
         <>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
@@ -642,7 +661,7 @@ export default function ThermalReceipt({
         </div>
       </div>
 
-      {/* Task 8: QR Code at bottom */}
+      {/* QR Code at bottom */}
       {qrDataUrl && (
         <div
           style={{
