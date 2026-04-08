@@ -249,6 +249,8 @@ function BatchPanel({ sku, productName, onClose }: BatchPanelProps) {
     setTimeout(() => {
       addBatch(sku, newExpiryDate, qty);
       refresh();
+      // Notify Dashboard to re-read batch data
+      window.dispatchEvent(new CustomEvent("batch-updated"));
       setAddDialogOpen(false);
       setNewExpiryDate("");
       setNewStockQty("");

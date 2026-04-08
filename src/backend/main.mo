@@ -9,17 +9,22 @@ import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import List "mo:core/List";
-import MixinAuthorization "authorization/MixinAuthorization";
-import AccessControl "authorization/access-control";
 
 actor {
-  let accessControlState = AccessControl.initState();
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe");
-  let ADMIN_PRINCIPAL_2 : Principal = Principal.fromText("ypeo3-r4v3v-ne5iu-xxop7-avd3x-c3wjb-pu4ok-qxvju-fcbvc-kt5jp-cqe");
-  include MixinAuthorization(accessControlState);
+
+  // Migration stubs: these stable variables existed in the previous version and must be
+  // explicitly migrated away. They are no longer used but must be declared to allow upgrade.
+  type _LegacyUserRole = { #admin; #user; #guest };
+  type _LegacyACState = { var adminAssigned : Bool; userRoles : Map.Map<Principal, _LegacyUserRole> };
+  stable var ADMIN_PRINCIPAL_2 : Principal = ADMIN_PRINCIPAL;
+  stable var accessControlState : _LegacyACState = {
+    var adminAssigned = true;
+    userRoles = Map.empty<Principal, _LegacyUserRole>();
+  };
 
   func isAdminCaller(caller : Principal) : Bool {
-    caller == ADMIN_PRINCIPAL or AccessControl.isAdmin(accessControlState, caller);
+    caller == ADMIN_PRINCIPAL;
   };
 
   func requireUser(caller : Principal) {
@@ -494,5 +499,9 @@ actor {
       case (?c) { c };
     };
     credits.add(storeId, currentBalance + amount);
+  };
+
+  public query ({ caller }) func isCallerAdmin() : async Bool {
+    isAdminCaller(caller);
   };
 };

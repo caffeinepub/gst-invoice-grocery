@@ -1,0 +1,104 @@
+type UserProfile = record {name: text;};
+type Time = int;
+type StoreSummary = 
+ record {
+   storeProfile: StoreProfile;
+   totalCgst: nat;
+   totalIgst: nat;
+   totalInvoices: nat;
+   totalProducts: nat;
+   totalSales: nat;
+   totalSgst: nat;
+ };
+type StoreProfile = 
+ record {
+   address: text;
+   createdAt: Time;
+   fssai: text;
+   gstin: text;
+   name: text;
+   owner: principal;
+   phone: text;
+   state: text;
+ };
+type Product = 
+ record {
+   createdAt: Time;
+   gstRate: nat;
+   hsnCode: text;
+   name: text;
+   price: nat;
+   sku: text;
+   stockQty: nat;
+   storeId: principal;
+ };
+type LineItem = 
+ record {
+   cgstAmt: nat;
+   gstRate: nat;
+   hsnCode: text;
+   igstAmt: nat;
+   lineTotal: nat;
+   productId: text;
+   productName: text;
+   qty: nat;
+   rate: nat;
+   sgstAmt: nat;
+ };
+type Invoice = 
+ record {
+   createdAt: Time;
+   customerGstin: text;
+   customerName: text;
+   date: Time;
+   grandTotal: nat;
+   invoiceNumber: nat;
+   isIgst: bool;
+   lineItems: vec LineItem;
+   storeId: principal;
+   subtotal: nat;
+   totalCgst: nat;
+   totalIgst: nat;
+   totalSgst: nat;
+ };
+type AdminStoreView = 
+ record {
+   address: text;
+   credits: nat;
+   fssai: text;
+   gstin: text;
+   owner: principal;
+   phone: text;
+   state: text;
+   storeName: text;
+ };
+service : {
+  addCreditsAdmin: (storeId: principal, amount: nat) -> ();
+  addProduct: (name: text, hsnCode: text, sku: text, price: nat, gstRate:
+   nat, stockQty: nat) -> (Product);
+  createInvoice: (customerName: text, customerGstin: text, isIgst: bool,
+   lineItems: vec LineItem) -> (Invoice);
+  deleteInvoice: (invoiceNumber: nat) -> ();
+  deleteProduct: (sku: text) -> ();
+  getAllStoresAdmin: () -> (vec AdminStoreView) query;
+  getCallerUserProfile: () -> (opt UserProfile) query;
+  getInvoice: (invoiceNumber: nat) -> (Invoice) query;
+  getInvoices: () -> (vec Invoice) query;
+  getMyCredits: () -> (nat) query;
+  getNextInvoiceNumber: () -> (nat) query;
+  getProducts: () -> (vec Product) query;
+  getStore: () -> (StoreProfile) query;
+  getStoreSummary: () -> (StoreSummary) query;
+  getUserProfile: (user: principal) -> (opt UserProfile) query;
+  isCallerAdmin: () -> (bool) query;
+  registerStore: (name: text, address: text, gstin: text, fssai: text, phone:
+   text, state: text) -> (StoreProfile);
+  saveCallerUserProfile: (profile: UserProfile) -> ();
+  updateInvoice: (invoiceNumber: nat, customerName: text, customerGstin:
+   text, isIgst: bool, lineItems: vec LineItem) -> (Invoice);
+  updateProduct: (sku: text, name: text, hsnCode: text, price: nat, gstRate:
+   nat, stockQty: nat) -> (Product);
+  updateProductStock: (productId: text, newQty: nat) -> ();
+  updateStore: (name: text, address: text, gstin: text, fssai: text, phone:
+   text, state: text) -> (StoreProfile);
+}

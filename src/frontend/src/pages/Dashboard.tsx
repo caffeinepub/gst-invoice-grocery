@@ -77,23 +77,33 @@ export default function Dashboard({ onNavigate }: Props) {
   const [showLowStock, setShowLowStock] = useState(false);
   const [lowStockDismissed, setLowStockDismissed] = useState(false);
 
+  // Re-render trigger for batch data (localStorage) — increments when batch-updated event fires
+  const [batchRevision, setBatchRevision] = useState(0);
+
   // Store logo from localStorage
   const [storeLogo, setStoreLogo] = useState<string | null>(() =>
     localStorage.getItem("store_logo"),
   );
 
-  // Listen for logo updates
+  // Listen for logo updates and batch updates
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "store_logo") {
         setStoreLogo(e.newValue);
       }
     };
+    const onBatchUpdated = () => {
+      setBatchRevision((prev) => prev + 1);
+    };
     window.addEventListener("storage", onStorage);
+    window.addEventListener("batch-updated", onBatchUpdated);
     if (summary) {
       setStoreLogo(localStorage.getItem("store_logo"));
     }
-    return () => window.removeEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("batch-updated", onBatchUpdated);
+    };
   }, [summary]);
 
   const lowStockItems = products.filter((p) => Number(p.stockQty) < 10);
@@ -250,9 +260,11 @@ export default function Dashboard({ onNavigate }: Props) {
     },
   ];
 
-  // Task 3: Batch-wise expiry entries
+  // Task 3: Batch-wise expiry entries (re-computed on batchRevision change)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // batchRevision is used here to force re-evaluation when batches change
+  void batchRevision;
 
   const expiryEntries: ExpiryEntry[] = [];
   for (const p of products) {

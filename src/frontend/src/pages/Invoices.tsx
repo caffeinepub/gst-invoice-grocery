@@ -153,8 +153,6 @@ export default function Invoices() {
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const logoUrl = localStorage.getItem("store_logo") ?? undefined;
-
   // Trigger actual print after animation
   useEffect(() => {
     if (!printInvoice) {
@@ -472,7 +470,6 @@ export default function Invoices() {
     ? {
         store: store || null,
         ...invoiceToDisplay(printInvoice),
-        logoUrl,
       }
     : null;
 
@@ -985,7 +982,6 @@ export default function Invoices() {
                     <ThermalReceipt
                       store={store || null}
                       {...invoiceToDisplay(viewInvoice)}
-                      logoUrl={logoUrl}
                     />
                   </div>
                 </div>

@@ -8,14 +8,14 @@ export interface None {
 }
 export type Option<T> = Some<T> | None;
 export interface AdminStoreView {
+    fssai: string;
     credits: bigint;
     owner: Principal;
+    state: string;
+    gstin: string;
+    address: string;
     storeName: string;
     phone: string;
-    address: string;
-    gstin: string;
-    fssai: string;
-    state: string;
 }
 export type Time = bigint;
 export interface LineItem {
@@ -77,21 +77,14 @@ export interface Product {
     gstRate: bigint;
     price: bigint;
 }
-export enum UserRole {
-    admin = "admin",
-    user = "user",
-    guest = "guest"
-}
 export interface backendInterface {
     addCreditsAdmin(storeId: Principal, amount: bigint): Promise<void>;
     addProduct(name: string, hsnCode: string, sku: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
-    assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createInvoice(customerName: string, customerGstin: string, isIgst: boolean, lineItems: Array<LineItem>): Promise<Invoice>;
     deleteInvoice(invoiceNumber: bigint): Promise<void>;
     deleteProduct(sku: string): Promise<void>;
     getAllStoresAdmin(): Promise<Array<AdminStoreView>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
-    getCallerUserRole(): Promise<UserRole>;
     getInvoice(invoiceNumber: bigint): Promise<Invoice>;
     getInvoices(): Promise<Array<Invoice>>;
     getMyCredits(): Promise<bigint>;
@@ -107,5 +100,4 @@ export interface backendInterface {
     updateProduct(sku: string, name: string, hsnCode: string, price: bigint, gstRate: bigint, stockQty: bigint): Promise<Product>;
     updateProductStock(productId: string, newQty: bigint): Promise<void>;
     updateStore(name: string, address: string, gstin: string, fssai: string, phone: string, state: string): Promise<StoreProfile>;
-    _initializeAccessControlWithSecret(secret: string): Promise<void>;
 }

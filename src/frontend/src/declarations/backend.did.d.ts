@@ -11,14 +11,14 @@ import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
 export interface AdminStoreView {
+  'fssai' : string,
   'credits' : bigint,
   'owner' : Principal,
+  'state' : string,
+  'gstin' : string,
+  'address' : string,
   'storeName' : string,
   'phone' : string,
-  'address' : string,
-  'gstin' : string,
-  'fssai' : string,
-  'state' : string,
 }
 export interface Invoice {
   'customerName' : string,
@@ -78,17 +78,12 @@ export interface StoreSummary {
 }
 export type Time = bigint;
 export interface UserProfile { 'name' : string }
-export type UserRole = { 'admin' : null } |
-  { 'user' : null } |
-  { 'guest' : null };
 export interface _SERVICE {
-  '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addCreditsAdmin' : ActorMethod<[Principal, bigint], undefined>,
   'addProduct' : ActorMethod<
     [string, string, string, bigint, bigint, bigint],
     Product
   >,
-  'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'createInvoice' : ActorMethod<
     [string, string, boolean, Array<LineItem>],
     Invoice
@@ -97,7 +92,6 @@ export interface _SERVICE {
   'deleteProduct' : ActorMethod<[string], undefined>,
   'getAllStoresAdmin' : ActorMethod<[], Array<AdminStoreView>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
-  'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getInvoice' : ActorMethod<[bigint], Invoice>,
   'getInvoices' : ActorMethod<[], Array<Invoice>>,
   'getMyCredits' : ActorMethod<[], bigint>,

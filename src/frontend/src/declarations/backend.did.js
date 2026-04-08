@@ -19,11 +19,6 @@ export const Product = IDL.Record({
   'gstRate' : IDL.Nat,
   'price' : IDL.Nat,
 });
-export const UserRole = IDL.Variant({
-  'admin' : IDL.Null,
-  'user' : IDL.Null,
-  'guest' : IDL.Null,
-});
 export const LineItem = IDL.Record({
   'qty' : IDL.Nat,
   'rate' : IDL.Nat,
@@ -52,14 +47,14 @@ export const Invoice = IDL.Record({
   'subtotal' : IDL.Nat,
 });
 export const AdminStoreView = IDL.Record({
+  'fssai' : IDL.Text,
   'credits' : IDL.Nat,
   'owner' : IDL.Principal,
+  'state' : IDL.Text,
+  'gstin' : IDL.Text,
+  'address' : IDL.Text,
   'storeName' : IDL.Text,
   'phone' : IDL.Text,
-  'address' : IDL.Text,
-  'gstin' : IDL.Text,
-  'fssai' : IDL.Text,
-  'state' : IDL.Text,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 export const StoreProfile = IDL.Record({
@@ -83,25 +78,21 @@ export const StoreSummary = IDL.Record({
 });
 
 export const idlService = IDL.Service({
-  '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'addCreditsAdmin' : IDL.Func([IDL.Principal, IDL.Nat], [], []),
   'addProduct' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
       [Product],
       [],
     ),
-  'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'createInvoice' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
       [Invoice],
       [],
     ),
-  'deleteProduct' : IDL.Func([IDL.Text], [], []),
   'deleteInvoice' : IDL.Func([IDL.Nat], [], []),
-  'updateInvoice' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)], [Invoice], []),
+  'deleteProduct' : IDL.Func([IDL.Text], [], []),
   'getAllStoresAdmin' : IDL.Func([], [IDL.Vec(AdminStoreView)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
-  'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getInvoice' : IDL.Func([IDL.Nat], [Invoice], ['query']),
   'getInvoices' : IDL.Func([], [IDL.Vec(Invoice)], ['query']),
   'getMyCredits' : IDL.Func([], [IDL.Nat], ['query']),
@@ -121,6 +112,11 @@ export const idlService = IDL.Service({
       [],
     ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'updateInvoice' : IDL.Func(
+      [IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+      [Invoice],
+      [],
+    ),
   'updateProduct' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
       [Product],
@@ -147,11 +143,6 @@ export const idlFactory = ({ IDL }) => {
     'hsnCode' : IDL.Text,
     'gstRate' : IDL.Nat,
     'price' : IDL.Nat,
-  });
-  const UserRole = IDL.Variant({
-    'admin' : IDL.Null,
-    'user' : IDL.Null,
-    'guest' : IDL.Null,
   });
   const LineItem = IDL.Record({
     'qty' : IDL.Nat,
@@ -181,14 +172,14 @@ export const idlFactory = ({ IDL }) => {
     'subtotal' : IDL.Nat,
   });
   const AdminStoreView = IDL.Record({
+    'fssai' : IDL.Text,
     'credits' : IDL.Nat,
     'owner' : IDL.Principal,
+    'state' : IDL.Text,
+    'gstin' : IDL.Text,
+    'address' : IDL.Text,
     'storeName' : IDL.Text,
     'phone' : IDL.Text,
-    'address' : IDL.Text,
-    'gstin' : IDL.Text,
-    'fssai' : IDL.Text,
-    'state' : IDL.Text,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
   const StoreProfile = IDL.Record({
@@ -212,25 +203,21 @@ export const idlFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
-    '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'addCreditsAdmin' : IDL.Func([IDL.Principal, IDL.Nat], [], []),
     'addProduct' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
         [Product],
         [],
       ),
-    'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'createInvoice' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
         [Invoice],
         [],
       ),
-    'deleteProduct' : IDL.Func([IDL.Text], [], []),
     'deleteInvoice' : IDL.Func([IDL.Nat], [], []),
-    'updateInvoice' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)], [Invoice], []),
+    'deleteProduct' : IDL.Func([IDL.Text], [], []),
     'getAllStoresAdmin' : IDL.Func([], [IDL.Vec(AdminStoreView)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
-    'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getInvoice' : IDL.Func([IDL.Nat], [Invoice], ['query']),
     'getInvoices' : IDL.Func([], [IDL.Vec(Invoice)], ['query']),
     'getMyCredits' : IDL.Func([], [IDL.Nat], ['query']),
@@ -250,6 +237,11 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'updateInvoice' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+        [Invoice],
+        [],
+      ),
     'updateProduct' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
         [Product],

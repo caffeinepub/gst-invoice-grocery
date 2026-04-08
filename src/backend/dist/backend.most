@@ -1,0 +1,111 @@
+// Version: 1.0.0
+type Data__791452850<K, V> =
+  {var count : Nat__490723111; kvs : [var ?(K, V)]};
+type Int__270357528 = Int__616954475;
+type Int__616954475 = Int;
+type Internal__8484328<K, V> =
+  {children : [var ?Node__46230540<K, V>]; data : Data__791452850<K, V>};
+type Invoice__772203955 =
+  {
+    createdAt : Time__900049286;
+    customerGstin : Text;
+    customerName : Text;
+    date : Time__900049286;
+    grandTotal : Nat;
+    invoiceNumber : Nat;
+    isIgst : Bool;
+    lineItems : [LineItem__64258240];
+    storeId : Principal;
+    subtotal : Nat;
+    totalCgst : Nat;
+    totalIgst : Nat;
+    totalSgst : Nat
+  };
+type Leaf__809889148<K, V> = {data : Data__791452850<K, V>};
+type LineItem__64258240 =
+  {
+    cgstAmt : Nat;
+    gstRate : Nat;
+    hsnCode : Text;
+    igstAmt : Nat;
+    lineTotal : Nat;
+    productId : Text;
+    productName : Text;
+    qty : Nat;
+    rate : Nat;
+    sgstAmt : Nat
+  };
+type Map__158565046<K, V> = Map__297112838<K, V>;
+type Map__297112838<K, V> =
+  {var root : Node__46230540<K, V>; var size : Nat__490723111};
+type Map__605269027<K, V> = Map__158565046<K, V>;
+type Nat__490723111 = Nat__920180692;
+type Nat__920180692 = Nat;
+type Node__46230540<K, V> =
+  {#internal : Internal__8484328<K, V>; #leaf : Leaf__809889148<K, V>};
+type Product__853085059 =
+  {
+    createdAt : Time__900049286;
+    gstRate : Nat;
+    hsnCode : Text;
+    name : Text;
+    price : Nat;
+    sku : Text;
+    stockQty : Nat;
+    storeId : Principal
+  };
+type StoreProfile__301394871 =
+  {
+    address : Text;
+    createdAt : Time__900049286;
+    fssai : Text;
+    gstin : Text;
+    name : Text;
+    owner : Principal;
+    phone : Text;
+    state : Text
+  };
+type Time__796480547 = Int__270357528;
+type Time__900049286 = Time__796480547;
+type UserProfile__491224006 = {name : Text};
+type _LegacyUserRole__540490753 = {#admin; #guest; #user};
+actor {
+  stable ADMIN_PRINCIPAL : Principal;
+  stable var ADMIN_PRINCIPAL_2 : Principal;
+  stable var accessControlState :
+    {
+      var adminAssigned : Bool;
+      userRoles : Map__605269027<Principal, _LegacyUserRole__540490753>
+    };
+  stable credits :
+    {var root : Node__46230540<Principal, Nat>; var size : Nat__490723111};
+  stable invoices :
+    {
+      var root :
+        Node__46230540<Principal, Map__605269027<Nat, Invoice__772203955>>;
+      var size : Nat__490723111
+    };
+  stable lineItems :
+    {
+      var root : Node__46230540<Nat, LineItem__64258240>;
+      var size : Nat__490723111
+    };
+  stable nextInvoiceNumber :
+    {var root : Node__46230540<Principal, Nat>; var size : Nat__490723111};
+  stable products :
+    {
+      var root :
+        Node__46230540<Principal, Map__605269027<Text, Product__853085059>>;
+      var size : Nat__490723111
+    };
+  stable stores :
+    {
+      var root : Node__46230540<Principal, StoreProfile__301394871>;
+      var size : Nat__490723111
+    };
+  stable userProfiles :
+    {
+      var root : Node__46230540<Principal, UserProfile__491224006>;
+      var size : Nat__490723111
+    }
+};

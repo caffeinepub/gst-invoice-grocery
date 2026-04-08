@@ -91,14 +91,13 @@ function calcLineItem(item: CartItem, isIgst: boolean): InvoiceLineItemDisplay {
   const cgstAmt = isIgst ? 0n : (taxable * gstRate) / 200n;
   const sgstAmt = isIgst ? 0n : (taxable * gstRate) / 200n;
   const igstAmt = isIgst ? (taxable * gstRate) / 100n : 0n;
-  // lineTotal = qty * MRP (for customer-facing amount) + GST on cost
-  // Actually: we display line total as qty*cost + GST, but show MRP separately
   const lineTotal = taxable + (isIgst ? igstAmt : cgstAmt + sgstAmt);
   return {
     productName: product.name,
+    barcode: product.sku,
     hsnCode: product.hsnCode,
     qty: qtyBig,
-    rate: mrp, // MRP for display on receipt
+    rate: mrp,
     gstRate,
     lineTotal,
     cgstAmt,
@@ -124,11 +123,17 @@ export default function NewInvoice() {
 
   const inStockProducts = products.filter((p) => {
     const sku = p.sku;
-    // If product has batches, check batch stock; otherwise check product.stockQty
     if (hasAnyBatches(sku)) {
+      // Batch products: valid if ANY active (non-expired, qty>0) batch exists
       return getTotalBatchStock(sku) > 0;
     }
-    return Number(p.stockQty) > 0 && !isProductExpired(sku);
+    // Non-batch products: valid if qty > 0
+    // If NO expiry date is set → always include (non-perishable goods)
+    // If expiry date IS set → only include if not expired
+    if (Number(p.stockQty) <= 0) return false;
+    const hasExpiry = !!localStorage.getItem(`expiry_${sku}`);
+    if (!hasExpiry) return true; // no expiry = always show
+    return !isProductExpired(sku);
   });
 
   const { data: store } = useGetStore();
@@ -139,6 +144,7 @@ export default function NewInvoice() {
   const [selectedSku, setSelectedSku] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
+  const [customerMobile, setCustomerMobile] = useState("");
   const [customerGstin, setCustomerGstin] = useState("");
   const [isIgst, setIsIgst] = useState(false);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("Cash");
@@ -149,8 +155,6 @@ export default function NewInvoice() {
     InsufficientItem[]
   >([]);
   const [stockPopupOpen, setStockPopupOpen] = useState(false);
-
-  const logoUrl = localStorage.getItem("store_logo") ?? undefined;
 
   // Trigger actual print after animation plays
   useEffect(() => {
@@ -434,6 +438,7 @@ export default function NewInvoice() {
       toast.success("Invoice saved successfully!");
       setCart([]);
       setCustomerName("");
+      setCustomerMobile("");
       setCustomerGstin("");
       setIsIgst(false);
       setPaymentMode("Cash");
@@ -475,6 +480,7 @@ export default function NewInvoice() {
     invoiceNumber: nextInvNo ?? 1n,
     date: new Date(),
     customerName: customerName || undefined,
+    customerMobile: customerMobile || undefined,
     customerGstin: customerGstin || undefined,
     isIgst,
     lineItems,
@@ -484,7 +490,6 @@ export default function NewInvoice() {
     totalIgst,
     grandTotal,
     paymentMode,
-    logoUrl,
   };
 
   return (
@@ -661,6 +666,19 @@ export default function NewInvoice() {
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="Walk-in Customer"
+                    data-ocid="invoice.input"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-mobile">
+                    Customer Mobile (optional)
+                  </Label>
+                  <Input
+                    id="cust-mobile"
+                    type="tel"
+                    value={customerMobile}
+                    onChange={(e) => setCustomerMobile(e.target.value)}
+                    placeholder="e.g. 9876543210"
                     data-ocid="invoice.input"
                   />
                 </div>
