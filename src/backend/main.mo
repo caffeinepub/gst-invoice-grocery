@@ -9,7 +9,9 @@ import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import List "mo:core/List";
+import Migration "migration";
 
+(with migration = Migration.run)
 actor {
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe");
 
@@ -70,6 +72,7 @@ actor {
     price : Nat;
     gstRate : Nat;
     stockQty : Nat;
+    defaultRate : ?Nat;
     createdAt : Time.Time;
   };
 
@@ -92,6 +95,7 @@ actor {
     date : Time.Time;
     customerName : Text;
     customerGstin : Text;
+    customerMobile : Text;
     isIgst : Bool;
     lineItems : [LineItem];
     subtotal : Nat;
@@ -198,7 +202,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func addProduct(name : Text, hsnCode : Text, sku : Text, price : Nat, gstRate : Nat, stockQty : Nat) : async Product {
+  public shared ({ caller }) func addProduct(name : Text, hsnCode : Text, sku : Text, price : Nat, gstRate : Nat, stockQty : Nat, defaultRate : ?Nat) : async Product {
     requireUser(caller);
     if (not stores.containsKey(caller)) { Runtime.trap("Store not found for this caller") };
     let existingProducts = switch (products.get(caller)) {
@@ -214,6 +218,7 @@ actor {
       price;
       gstRate;
       stockQty;
+      defaultRate;
       createdAt = Time.now();
     };
     existingProducts.add(sku, product);
@@ -221,7 +226,7 @@ actor {
     product;
   };
 
-  public shared ({ caller }) func updateProduct(sku : Text, name : Text, hsnCode : Text, price : Nat, gstRate : Nat, stockQty : Nat) : async Product {
+  public shared ({ caller }) func updateProduct(sku : Text, name : Text, hsnCode : Text, price : Nat, gstRate : Nat, stockQty : Nat, defaultRate : ?Nat) : async Product {
     requireUser(caller);
     switch (products.get(caller)) {
       case (null) { Runtime.trap("Product not found for this store") };
@@ -237,6 +242,7 @@ actor {
               price;
               gstRate;
               stockQty;
+              defaultRate;
               createdAt = product.createdAt;
             };
             prods.add(sku, updatedProduct);
@@ -269,7 +275,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func createInvoice(customerName : Text, customerGstin : Text, isIgst : Bool, lineItems : [LineItem]) : async Invoice {
+  public shared ({ caller }) func createInvoice(customerName : Text, customerGstin : Text, customerMobile : Text, isIgst : Bool, lineItems : [LineItem]) : async Invoice {
     requireUser(caller);
     let currentCredits = switch (credits.get(caller)) {
       case (null) { 0 };
@@ -293,6 +299,7 @@ actor {
       date = Time.now();
       customerName;
       customerGstin;
+      customerMobile;
       isIgst;
       lineItems;
       subtotal;
@@ -327,7 +334,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func updateInvoice(invoiceNumber : Nat, customerName : Text, customerGstin : Text, isIgst : Bool, lineItems : [LineItem]) : async Invoice {
+  public shared ({ caller }) func updateInvoice(invoiceNumber : Nat, customerName : Text, customerGstin : Text, customerMobile : Text, isIgst : Bool, lineItems : [LineItem]) : async Invoice {
     requireUser(caller);
     switch (invoices.get(caller)) {
       case (null) { Runtime.trap("Invoice not found for this store") };
@@ -346,6 +353,7 @@ actor {
               date = existing.date;
               customerName;
               customerGstin;
+              customerMobile;
               isIgst;
               lineItems;
               subtotal;
@@ -380,6 +388,7 @@ actor {
               price = product.price;
               gstRate = product.gstRate;
               stockQty = newQty;
+              defaultRate = product.defaultRate;
               createdAt = product.createdAt;
             };
             prods.add(productId, updatedProduct);

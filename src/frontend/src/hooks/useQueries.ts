@@ -190,8 +190,12 @@ export function useAddProduct() {
       price: bigint;
       gstRate: bigint;
       stockQty: bigint;
+      defaultRate?: [] | [bigint];
     }) => {
       if (!actor) throw new Error("Not connected");
+      const dr = data.defaultRate;
+      const defaultRateVal: bigint | null =
+        dr != null && dr.length > 0 ? (dr[0] as bigint) : null;
       return actor.addProduct(
         data.name,
         data.hsnCode,
@@ -199,6 +203,7 @@ export function useAddProduct() {
         data.price,
         data.gstRate,
         data.stockQty,
+        defaultRateVal,
       );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }),
@@ -216,8 +221,12 @@ export function useUpdateProduct() {
       price: bigint;
       gstRate: bigint;
       stockQty: bigint;
+      defaultRate?: [] | [bigint];
     }) => {
       if (!actor) throw new Error("Not connected");
+      const dr2 = data.defaultRate;
+      const defaultRateVal2: bigint | null =
+        dr2 != null && dr2.length > 0 ? (dr2[0] as bigint) : null;
       return actor.updateProduct(
         data.sku,
         data.name,
@@ -225,6 +234,7 @@ export function useUpdateProduct() {
         data.price,
         data.gstRate,
         data.stockQty,
+        defaultRateVal2,
       );
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }),
@@ -250,6 +260,7 @@ export function useCreateInvoice() {
     mutationFn: async (data: {
       customerName: string;
       customerGstin: string;
+      customerMobile: string;
       isIgst: boolean;
       lineItems: LineItem[];
     }) => {
@@ -257,6 +268,7 @@ export function useCreateInvoice() {
       const invoice = await actor.createInvoice(
         data.customerName,
         data.customerGstin,
+        data.customerMobile,
         data.isIgst,
         data.lineItems,
       );
@@ -308,6 +320,7 @@ export function useUpdateInvoice() {
       invoiceNumber: bigint;
       customerName: string;
       customerGstin: string;
+      customerMobile: string;
       isIgst: boolean;
       lineItems: LineItem[];
     }) => {
@@ -316,6 +329,7 @@ export function useUpdateInvoice() {
         data.invoiceNumber,
         data.customerName,
         data.customerGstin,
+        data.customerMobile,
         data.isIgst,
         data.lineItems,
       );

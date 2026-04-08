@@ -181,6 +181,12 @@ export default function NewInvoice() {
     const product = products.find((p) => p.sku === sku);
     if (!product) return;
 
+    // Auto-fill costPrice from defaultRate (in paise → convert to rupees for display)
+    const autoCostPrice =
+      product.defaultRate !== undefined
+        ? Number(product.defaultRate) / 100
+        : undefined;
+
     if (hasAnyBatches(product.sku)) {
       const activeBatches = getActiveBatches(product.sku);
       if (activeBatches.length === 0) {
@@ -210,6 +216,7 @@ export default function NewInvoice() {
             qty: 1,
             batchId: targetBatch.batchId,
             batchExpiryDate: targetBatch.expiryDate,
+            costPrice: autoCostPrice,
           },
         ];
       });
@@ -221,7 +228,7 @@ export default function NewInvoice() {
             i.product.sku === sku ? { ...i, qty: i.qty + 1 } : i,
           );
         }
-        return [...prev, { product, qty: 1 }];
+        return [...prev, { product, qty: 1, costPrice: autoCostPrice }];
       });
     }
     setSelectedSku("");
@@ -233,6 +240,12 @@ export default function NewInvoice() {
       toast.error(`No product found with barcode/SKU: ${barcode}`);
       return;
     }
+
+    // Auto-fill costPrice from defaultRate (paise → rupees)
+    const autoCostPrice =
+      product.defaultRate !== undefined
+        ? Number(product.defaultRate) / 100
+        : undefined;
 
     if (hasAnyBatches(product.sku)) {
       const activeBatches = getActiveBatches(product.sku);
@@ -257,6 +270,7 @@ export default function NewInvoice() {
             qty: 1,
             batchId: earliest.batchId,
             batchExpiryDate: earliest.expiryDate,
+            costPrice: autoCostPrice,
           },
         ];
       });
@@ -280,7 +294,7 @@ export default function NewInvoice() {
           i.product.sku === barcode ? { ...i, qty: i.qty + 1 } : i,
         );
       }
-      return [...prev, { product, qty: 1 }];
+      return [...prev, { product, qty: 1, costPrice: autoCostPrice }];
     });
     toast.success(`Added: ${product.name}`);
   };
@@ -419,6 +433,7 @@ export default function NewInvoice() {
       await createMutation.mutateAsync({
         customerName,
         customerGstin,
+        customerMobile,
         isIgst,
         lineItems: backendLineItems,
       });
@@ -764,21 +779,33 @@ export default function NewInvoice() {
                         if (hasAnyBatches(p.sku)) {
                           const activeBatches = getActiveBatches(p.sku);
                           if (activeBatches.length === 0) return [];
-                          return activeBatches.map((batch) => (
-                            <SelectItem
-                              key={`${p.sku}::${batch.batchId}`}
-                              value={`${p.sku}::${batch.batchId}`}
-                            >
-                              {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} |
-                              Exp: {batch.expiryDate} | Qty: {batch.stockQty}{" "}
-                              (GST: {p.gstRate.toString()}%)
-                            </SelectItem>
-                          ));
+                          return activeBatches.map((batch) => {
+                            const mrpStr = `₹${(Number(p.price) / 100).toFixed(2)}`;
+                            const costStr =
+                              p.defaultRate !== undefined
+                                ? ` | Cost: ₹${(Number(p.defaultRate) / 100).toFixed(2)}`
+                                : "";
+                            return (
+                              <SelectItem
+                                key={`${p.sku}::${batch.batchId}`}
+                                value={`${p.sku}::${batch.batchId}`}
+                              >
+                                {p.name} — MRP: {mrpStr}
+                                {costStr} | Exp: {batch.expiryDate} | Qty:{" "}
+                                {batch.stockQty} (GST: {p.gstRate.toString()}%)
+                              </SelectItem>
+                            );
+                          });
                         }
+                        const mrpStr = `₹${(Number(p.price) / 100).toFixed(2)}`;
+                        const costStr =
+                          p.defaultRate !== undefined
+                            ? ` | Cost: ₹${(Number(p.defaultRate) / 100).toFixed(2)}`
+                            : "";
                         return [
                           <SelectItem key={p.sku} value={p.sku}>
-                            {p.name} — ₹{(Number(p.price) / 100).toFixed(2)} |
-                            Qty: {Number(p.stockQty)} (GST:{" "}
+                            {p.name} — MRP: {mrpStr}
+                            {costStr} | Qty: {Number(p.stockQty)} (GST:{" "}
                             {p.gstRate.toString()}%)
                           </SelectItem>,
                         ];
@@ -945,6 +972,12 @@ export default function NewInvoice() {
                                   className="w-20 text-right h-7 text-sm p-1"
                                   data-ocid="invoice.input"
                                 />
+                                {item.product.defaultRate !== undefined &&
+                                  item.costPrice !== undefined && (
+                                    <div className="text-xs text-primary/70 text-right font-medium">
+                                      auto-filled
+                                    </div>
+                                  )}
                                 <div className="text-xs text-muted-foreground text-right">
                                   MRP: {fmt(item.product.price)}
                                 </div>

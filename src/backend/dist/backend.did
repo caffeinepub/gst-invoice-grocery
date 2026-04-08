@@ -24,6 +24,7 @@ type StoreProfile =
 type Product = 
  record {
    createdAt: Time;
+   defaultRate: opt nat;
    gstRate: nat;
    hsnCode: text;
    name: text;
@@ -49,6 +50,7 @@ type Invoice =
  record {
    createdAt: Time;
    customerGstin: text;
+   customerMobile: text;
    customerName: text;
    date: Time;
    grandTotal: nat;
@@ -75,9 +77,9 @@ type AdminStoreView =
 service : {
   addCreditsAdmin: (storeId: principal, amount: nat) -> ();
   addProduct: (name: text, hsnCode: text, sku: text, price: nat, gstRate:
-   nat, stockQty: nat) -> (Product);
-  createInvoice: (customerName: text, customerGstin: text, isIgst: bool,
-   lineItems: vec LineItem) -> (Invoice);
+   nat, stockQty: nat, defaultRate: opt nat) -> (Product);
+  createInvoice: (customerName: text, customerGstin: text, customerMobile:
+   text, isIgst: bool, lineItems: vec LineItem) -> (Invoice);
   deleteInvoice: (invoiceNumber: nat) -> ();
   deleteProduct: (sku: text) -> ();
   getAllStoresAdmin: () -> (vec AdminStoreView) query;
@@ -95,9 +97,10 @@ service : {
    text, state: text) -> (StoreProfile);
   saveCallerUserProfile: (profile: UserProfile) -> ();
   updateInvoice: (invoiceNumber: nat, customerName: text, customerGstin:
-   text, isIgst: bool, lineItems: vec LineItem) -> (Invoice);
+   text, customerMobile: text, isIgst: bool, lineItems: vec LineItem) ->
+   (Invoice);
   updateProduct: (sku: text, name: text, hsnCode: text, price: nat, gstRate:
-   nat, stockQty: nat) -> (Product);
+   nat, stockQty: nat, defaultRate: opt nat) -> (Product);
   updateProductStock: (productId: text, newQty: nat) -> ();
   updateStore: (name: text, address: text, gstin: text, fssai: text, phone:
    text, state: text) -> (StoreProfile);

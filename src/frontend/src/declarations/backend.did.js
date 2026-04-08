@@ -11,6 +11,7 @@ import { IDL } from '@icp-sdk/core/candid';
 export const Time = IDL.Int;
 export const Product = IDL.Record({
   'sku' : IDL.Text,
+  'defaultRate' : IDL.Opt(IDL.Nat),
   'stockQty' : IDL.Nat,
   'storeId' : IDL.Principal,
   'name' : IDL.Text,
@@ -38,6 +39,7 @@ export const Invoice = IDL.Record({
   'date' : Time,
   'storeId' : IDL.Principal,
   'createdAt' : Time,
+  'customerMobile' : IDL.Text,
   'totalCgst' : IDL.Nat,
   'totalIgst' : IDL.Nat,
   'isIgst' : IDL.Bool,
@@ -80,12 +82,20 @@ export const StoreSummary = IDL.Record({
 export const idlService = IDL.Service({
   'addCreditsAdmin' : IDL.Func([IDL.Principal, IDL.Nat], [], []),
   'addProduct' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
+      [
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Opt(IDL.Nat),
+      ],
       [Product],
       [],
     ),
   'createInvoice' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
       [Invoice],
       [],
     ),
@@ -113,12 +123,20 @@ export const idlService = IDL.Service({
     ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'updateInvoice' : IDL.Func(
-      [IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+      [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
       [Invoice],
       [],
     ),
   'updateProduct' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
+      [
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Nat,
+        IDL.Opt(IDL.Nat),
+      ],
       [Product],
       [],
     ),
@@ -136,6 +154,7 @@ export const idlFactory = ({ IDL }) => {
   const Time = IDL.Int;
   const Product = IDL.Record({
     'sku' : IDL.Text,
+    'defaultRate' : IDL.Opt(IDL.Nat),
     'stockQty' : IDL.Nat,
     'storeId' : IDL.Principal,
     'name' : IDL.Text,
@@ -163,6 +182,7 @@ export const idlFactory = ({ IDL }) => {
     'date' : Time,
     'storeId' : IDL.Principal,
     'createdAt' : Time,
+    'customerMobile' : IDL.Text,
     'totalCgst' : IDL.Nat,
     'totalIgst' : IDL.Nat,
     'isIgst' : IDL.Bool,
@@ -205,12 +225,20 @@ export const idlFactory = ({ IDL }) => {
   return IDL.Service({
     'addCreditsAdmin' : IDL.Func([IDL.Principal, IDL.Nat], [], []),
     'addProduct' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Opt(IDL.Nat),
+        ],
         [Product],
         [],
       ),
     'createInvoice' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
         [Invoice],
         [],
       ),
@@ -238,12 +266,20 @@ export const idlFactory = ({ IDL }) => {
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'updateInvoice' : IDL.Func(
-        [IDL.Nat, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
+        [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool, IDL.Vec(LineItem)],
         [Invoice],
         [],
       ),
     'updateProduct' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat],
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Nat,
+          IDL.Opt(IDL.Nat),
+        ],
         [Product],
         [],
       ),

@@ -122,18 +122,34 @@ export function formatBatchDate(dateStr: string): string {
   });
 }
 
+/** Read the configurable expiry alert threshold from localStorage (default 30 days) */
+export function getExpiryThreshold(): number {
+  const raw = localStorage.getItem("expiryThresholdDays");
+  if (!raw) return 30;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed < 1 ? 30 : parsed;
+}
+
+/** Save the configurable expiry alert threshold to localStorage */
+export function setExpiryThreshold(days: number): void {
+  localStorage.setItem("expiryThresholdDays", String(Math.max(1, days)));
+}
+
 /** Get expiry status for a batch date */
 export function getBatchExpiryStatus(
   dateStr: string,
+  threshold?: number,
 ): "expired" | "expiring" | "ok" {
   if (!dateStr) return "ok";
+  const effectiveThreshold =
+    threshold !== undefined ? threshold : getExpiryThreshold();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const exp = new Date(dateStr);
   exp.setHours(0, 0, 0, 0);
   if (exp < today) return "expired";
-  const days30 = new Date(today);
-  days30.setDate(today.getDate() + 30);
-  if (exp <= days30) return "expiring";
+  const thresholdDate = new Date(today);
+  thresholdDate.setDate(today.getDate() + effectiveThreshold);
+  if (exp <= thresholdDate) return "expiring";
   return "ok";
 }

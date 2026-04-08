@@ -1,0 +1,26 @@
+{
+  "overview": "A GST-compliant invoice generation app for grocery stores with multi-batch inventory, expiry management, customer tracking, barcode scanning, thermal printing, and admin panel for store management.",
+  "features": [
+    "Batch detail column on product save screen",
+    "Default rate (cost) per product with auto-fetch in invoices",
+    "Customer purchase history view by mobile number",
+    "Configurable expiry threshold for batch stock alerts",
+    "Per-product profit margin report (cost vs MRP)",
+    "Batch detail in product export Excel",
+    "customerMobile stored in backend Invoice record",
+    "GST-compliant invoice printing with QR code and HSN-wise breakdown",
+    "Multi-batch FIFO inventory management",
+    "Manager PIN gated sensitive actions"
+  ],
+  "category": "productivity",
+  "tags": [
+    "gst",
+    "invoice",
+    "grocery",
+    "inventory",
+    "batch-management",
+    "thermal-printing",
+    "india"
+  ],
+  "last_updated": "2026-04-08T02:10:12.181Z"
+}

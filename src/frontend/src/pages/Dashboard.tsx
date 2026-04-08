@@ -6,6 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertTriangle,
@@ -14,6 +16,7 @@ import {
   Package,
   Receipt,
   RefreshCw,
+  Settings,
   Store,
   TrendingUp,
   Wallet,
@@ -25,6 +28,8 @@ import {
   formatBatchDate,
   getBatchExpiryStatus,
   getBatches,
+  getExpiryThreshold,
+  setExpiryThreshold,
 } from "../hooks/useBatchInventory";
 import {
   useGetMyCredits,
@@ -76,6 +81,14 @@ export default function Dashboard({ onNavigate }: Props) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showLowStock, setShowLowStock] = useState(false);
   const [lowStockDismissed, setLowStockDismissed] = useState(false);
+
+  // Settings modal state
+  const [showSettings, setShowSettings] = useState(false);
+  const [thresholdInput, setThresholdInput] =
+    useState<number>(getExpiryThreshold);
+  // expiryThreshold drives re-render of expiry section when settings are saved
+  const [expiryThreshold, setExpiryThresholdState] =
+    useState<number>(getExpiryThreshold);
 
   // Re-render trigger for batch data (localStorage) — increments when batch-updated event fires
   const [batchRevision, setBatchRevision] = useState(0);
@@ -260,10 +273,10 @@ export default function Dashboard({ onNavigate }: Props) {
     },
   ];
 
-  // Task 3: Batch-wise expiry entries (re-computed on batchRevision change)
+  // Task 3: Batch-wise expiry entries (re-computed on batchRevision or expiryThreshold change)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // batchRevision is used here to force re-evaluation when batches change
+  // batchRevision and expiryThreshold are used here to force re-evaluation when batches or settings change
   void batchRevision;
 
   const expiryEntries: ExpiryEntry[] = [];
@@ -272,7 +285,7 @@ export default function Dashboard({ onNavigate }: Props) {
     if (batches.length > 0) {
       // Use batch data
       for (const batch of batches) {
-        const status = getBatchExpiryStatus(batch.expiryDate);
+        const status = getBatchExpiryStatus(batch.expiryDate, expiryThreshold);
         if (status === "ok") continue; // only show expired/expiring
         const expDate = batch.expiryDate ? new Date(batch.expiryDate) : null;
         const daysLeft = expDate
@@ -309,7 +322,7 @@ export default function Dashboard({ onNavigate }: Props) {
           status: "expired",
           daysLeft,
         });
-      } else if (daysLeft <= 30) {
+      } else if (daysLeft <= expiryThreshold) {
         expiryEntries.push({
           productName: p.name,
           sku: p.sku,
@@ -411,6 +424,75 @@ export default function Dashboard({ onNavigate }: Props) {
         </DialogContent>
       </Dialog>
 
+      {/* Settings Modal */}
+      <Dialog
+        open={showSettings}
+        onOpenChange={(open) => {
+          setShowSettings(open);
+          if (open) setThresholdInput(getExpiryThreshold());
+        }}
+      >
+        <DialogContent
+          className="max-w-sm"
+          data-ocid="dashboard.settings_modal"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Settings className="w-5 h-5 text-saffron" />
+              Dashboard Settings
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label
+                htmlFor="expiry-threshold"
+                className="text-sm font-semibold text-foreground"
+              >
+                Expiry Alert Threshold (days)
+              </Label>
+              <Input
+                id="expiry-threshold"
+                type="number"
+                min={1}
+                max={90}
+                value={thresholdInput}
+                onChange={(e) => setThresholdInput(Number(e.target.value))}
+                className="h-10 border-input"
+                data-ocid="dashboard.settings_threshold_input"
+              />
+              <p className="text-xs text-muted-foreground">
+                Products expiring within this many days will be highlighted.
+                Min: 1 day — Max: 90 days.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 flex-row">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSettings(false)}
+              data-ocid="dashboard.settings_cancel_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-gradient-to-r from-saffron to-saffron-dark text-white shadow-warm"
+              onClick={() => {
+                const clamped = Math.max(1, Math.min(90, thresholdInput || 30));
+                setExpiryThreshold(clamped);
+                setExpiryThresholdState(clamped);
+                setThresholdInput(clamped);
+                setShowSettings(false);
+              }}
+              data-ocid="dashboard.settings_save_button"
+            >
+              Save Settings
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Welcome Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -432,6 +514,17 @@ export default function Dashboard({ onNavigate }: Props) {
           <RefreshCw
             className={`w-4 h-4 text-white ${isRefreshing ? "animate-spin" : ""}`}
           />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          className="absolute top-3 right-14 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors z-10"
+          title="Dashboard settings"
+          aria-label="Dashboard settings"
+          data-ocid="dashboard.settings_button"
+        >
+          <Settings className="w-4 h-4 text-white" />
         </button>
 
         <div className="relative flex items-center gap-4">
@@ -564,8 +657,11 @@ export default function Dashboard({ onNavigate }: Props) {
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-saffron" />
               <h2 className="font-display font-semibold text-foreground text-base">
-                Batch-wise Expiry Alert
+                Expiry Alerts
               </h2>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-saffron-light text-saffron-dark">
+                {expiryThreshold}d
+              </span>
             </div>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
               {expiryEntries.length} batch
@@ -619,7 +715,8 @@ export default function Dashboard({ onNavigate }: Props) {
             {expiringEntries.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">
-                  Expiring Within 30 Days ({expiringEntries.length})
+                  Expiring Within {expiryThreshold} Days (
+                  {expiringEntries.length})
                 </p>
                 <div className="max-h-52 overflow-y-auto space-y-1.5">
                   {expiringEntries.map((entry, idx) => (

@@ -43,7 +43,9 @@ import {
   Plus,
   Search,
   Trash2,
+  TrendingUp,
   Upload,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
@@ -55,6 +57,7 @@ import {
   addBatch,
   deleteBatch,
   formatBatchDate,
+  getActiveBatches,
   getBatchExpiryStatus,
   getBatches,
   getTotalBatchStock,
@@ -120,6 +123,7 @@ interface ProductForm {
   gstRate: string;
   stockQty: string;
   expiryDate: string;
+  defaultRate: string;
 }
 
 const emptyForm: ProductForm = {
@@ -130,6 +134,7 @@ const emptyForm: ProductForm = {
   gstRate: "5",
   stockQty: "0",
   expiryDate: "",
+  defaultRate: "",
 };
 
 interface ImportRow {
@@ -453,6 +458,202 @@ function BatchPanel({ sku, productName, onClose }: BatchPanelProps) {
   );
 }
 
+// ── Batch summary badge for product list ─────────────────────────────────────
+function BatchSummaryBadge({
+  sku,
+  stockQty,
+}: { sku: string; stockQty: bigint }) {
+  if (!hasAnyBatches(sku)) {
+    return <span className="text-sm">{stockQty.toString()}</span>;
+  }
+  const active = getActiveBatches(sku);
+  const total = active.reduce((sum, b) => sum + b.stockQty, 0);
+  const count = getBatches(sku).length;
+  const earliest = active.length > 0 ? active[0].expiryDate : null;
+
+  const fmtExpiry = (d: string) => {
+    const dt = new Date(d);
+    return dt.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "2-digit",
+    });
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs font-normal whitespace-nowrap">
+        {count} batch{count !== 1 ? "es" : ""} · {total} qty
+        {earliest ? ` · Exp: ${fmtExpiry(earliest)}` : ""}
+      </Badge>
+      {active.length === 0 && (
+        <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">
+          Expired
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+// ── Profit Margin Modal ───────────────────────────────────────────────────────
+interface ProfitMarginModalProps {
+  open: boolean;
+  onClose: () => void;
+  products: Product[];
+}
+
+function ProfitMarginModal({
+  open,
+  onClose,
+  products,
+}: ProfitMarginModalProps) {
+  const rows = products
+    .filter((p) => p.defaultRate != null)
+    .map((p) => {
+      const mrp = Number(p.price) / 100;
+      const cost = Number(p.defaultRate!) / 100;
+      const marginAmt = mrp - cost;
+      const marginPct = mrp > 0 ? (marginAmt / mrp) * 100 : 0;
+      return { p, mrp, cost, marginAmt, marginPct };
+    })
+    .sort((a, b) => b.marginPct - a.marginPct);
+
+  const avgMargin =
+    rows.length > 0
+      ? rows.reduce((sum, r) => sum + r.marginPct, 0) / rows.length
+      : 0;
+
+  const marginColor = (pct: number) => {
+    if (pct >= 20) return "text-green-600 font-semibold";
+    if (pct >= 10) return "text-amber-600 font-semibold";
+    return "text-red-600 font-semibold";
+  };
+
+  const marginBadge = (pct: number) => {
+    if (pct >= 20) return "bg-green-100 text-green-700 border-green-200";
+    if (pct >= 10) return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-red-100 text-red-700 border-red-200";
+  };
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      open
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 border-0 max-w-none w-full h-full m-0"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+      aria-label="Profit Margin Report"
+      data-ocid="products.profit_modal"
+    >
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-border">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-gradient-to-r from-violet-50 to-purple-50 rounded-t-2xl">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-violet-600" />
+            <h2 className="text-lg font-bold text-foreground">
+              Profit Margin Report
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Close"
+            data-ocid="products.profit_modal.close_button"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-0">
+          {rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+              <TrendingUp className="w-10 h-10 text-muted-foreground mb-3" />
+              <p className="font-medium text-foreground mb-1">
+                No cost prices set
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Add a "Default Cost/Rate" when saving products to see margin
+                analysis here.
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="font-semibold">Product</TableHead>
+                  <TableHead>Barcode</TableHead>
+                  <TableHead className="text-right">MRP (₹)</TableHead>
+                  <TableHead className="text-right">Cost (₹)</TableHead>
+                  <TableHead className="text-right">Margin (₹)</TableHead>
+                  <TableHead className="text-center">Margin %</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map(({ p, mrp, cost, marginAmt, marginPct }) => (
+                  <TableRow
+                    key={p.sku}
+                    className="hover:bg-muted/20"
+                    data-ocid={`products.profit.row.${p.sku}`}
+                  >
+                    <TableCell className="font-medium max-w-[160px] truncate">
+                      {p.name}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {p.sku}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      ₹{mrp.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      ₹{cost.toFixed(2)}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right ${marginColor(marginPct)}`}
+                    >
+                      {marginAmt >= 0 ? "+" : ""}₹{marginAmt.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        className={`text-xs border ${marginBadge(marginPct)}`}
+                      >
+                        {marginPct.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        {rows.length > 0 && (
+          <div className="px-6 py-3 border-t border-border bg-muted/30 rounded-b-2xl flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              <span className="font-semibold text-foreground">
+                {rows.length}
+              </span>{" "}
+              product{rows.length !== 1 ? "s" : ""} analyzed
+            </span>
+            <span className="text-muted-foreground">
+              Avg margin:{" "}
+              <span className={`font-bold ${marginColor(avgMargin)}`}>
+                {avgMargin.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
 export default function Products() {
   const { data: products = [], isLoading } = useGetProducts();
   const addMutation = useAddProduct();
@@ -463,6 +664,7 @@ export default function Products() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+  const [profitMarginOpen, setProfitMarginOpen] = useState(false);
 
   // Single delete state
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -549,6 +751,7 @@ export default function Products() {
 
   const openEdit = (p: Product) => {
     setEditProduct(p);
+    const dr = p.defaultRate != null ? p.defaultRate : null;
     setForm({
       name: p.name,
       hsnCode: p.hsnCode,
@@ -557,6 +760,7 @@ export default function Products() {
       gstRate: p.gstRate.toString(),
       stockQty: p.stockQty.toString(),
       expiryDate: getExpiry(p.sku),
+      defaultRate: dr != null ? (Number(dr) / 100).toFixed(2) : "",
     });
     setDialogOpen(true);
   };
@@ -565,6 +769,11 @@ export default function Products() {
     e.preventDefault();
     const pricePaise = BigInt(Math.round(Number.parseFloat(form.price) * 100));
     const sku = editProduct ? editProduct.sku : form.sku;
+    const defaultRateVal: [] | [bigint] =
+      form.defaultRate.trim() !== "" &&
+      !Number.isNaN(Number.parseFloat(form.defaultRate))
+        ? [BigInt(Math.round(Number.parseFloat(form.defaultRate) * 100))]
+        : [];
     try {
       if (editProduct) {
         await updateMutation.mutateAsync({
@@ -574,6 +783,7 @@ export default function Products() {
           price: pricePaise,
           gstRate: BigInt(form.gstRate),
           stockQty: BigInt(form.stockQty),
+          defaultRate: defaultRateVal,
         });
         toast.success("Product updated!");
       } else {
@@ -584,6 +794,7 @@ export default function Products() {
           price: pricePaise,
           gstRate: BigInt(form.gstRate),
           stockQty: BigInt(form.stockQty),
+          defaultRate: defaultRateVal,
         });
         toast.success("Product added!");
       }
@@ -765,16 +976,26 @@ export default function Products() {
       "HSN Code",
       "GST Rate",
       "Expiry Date",
+      "Default Rate (₹)",
       "Batch Count",
-      "Total Batch Stock",
+      "Total Batch Qty",
+      "Earliest Expiry",
     ];
 
     const rows = products.map((p) => {
       const batchList = getBatches(p.sku);
       const batchCount = batchList.length;
-      const totalBatchStock =
-        batchCount > 0 ? batchList.reduce((sum, b) => sum + b.stockQty, 0) : 0;
+      const activeBatches = getActiveBatches(p.sku);
+      const totalBatchStock = activeBatches.reduce(
+        (sum, b) => sum + b.stockQty,
+        0,
+      );
       const expiryDate = getExpiry(p.sku) || "";
+      const dr = p.defaultRate != null ? p.defaultRate : null;
+      const defaultRateDisplay =
+        dr != null ? (Number(dr) / 100).toFixed(2) : "";
+      const earliestExpiry =
+        activeBatches.length > 0 ? activeBatches[0].expiryDate : "";
       return [
         p.name,
         p.sku,
@@ -783,8 +1004,10 @@ export default function Products() {
         p.hsnCode,
         Number(p.gstRate),
         expiryDate,
+        defaultRateDisplay,
         batchCount,
-        totalBatchStock,
+        totalBatchStock || Number(p.stockQty),
+        earliestExpiry,
       ];
     });
 
@@ -797,8 +1020,10 @@ export default function Products() {
       { wch: 12 },
       { wch: 10 },
       { wch: 20 },
+      { wch: 16 },
       { wch: 12 },
-      { wch: 18 },
+      { wch: 16 },
+      { wch: 16 },
     ];
     const wb = XLS.utils.book_new();
     XLS.utils.book_append_sheet(wb, ws, "Products");
@@ -875,6 +1100,16 @@ export default function Products() {
                 title="Export all products to Excel"
               >
                 <Download className="w-4 h-4 mr-1" /> Export Products
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setProfitMarginOpen(true)}
+                disabled={products.length === 0}
+                className="text-violet-700 border-violet-300 hover:bg-violet-50"
+                title="Profit Margin Report"
+                data-ocid="products.profit_margin_button"
+              >
+                <TrendingUp className="w-4 h-4 mr-1" /> Profit Margin
               </Button>
               <Button
                 variant="outline"
@@ -979,7 +1214,9 @@ export default function Products() {
                     <TableHead>SKU / Barcode</TableHead>
                     <TableHead className="text-right">MRP (₹)</TableHead>
                     <TableHead className="text-center">GST %</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">
+                      Stock / Batches
+                    </TableHead>
                     <TableHead className="text-center">Expiry</TableHead>
                     <TableHead className="text-center">Batches</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
@@ -1047,22 +1284,10 @@ export default function Products() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex flex-col items-end gap-0.5">
-                                <span
-                                  className={
-                                    Number(p.stockQty) < 10
-                                      ? "text-destructive font-medium"
-                                      : ""
-                                  }
-                                >
-                                  {p.stockQty.toString()}
-                                </span>
-                                {p.hasBatches && p.batchStock !== null && (
-                                  <span className="text-xs text-amber-600">
-                                    Batch: {p.batchStock}
-                                  </span>
-                                )}
-                              </div>
+                              <BatchSummaryBadge
+                                sku={p.sku}
+                                stockQty={p.stockQty}
+                              />
                             </TableCell>
                             <TableCell className="text-center">
                               {p.expiryDate ? (
@@ -1369,6 +1594,26 @@ export default function Products() {
                 />
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="p-rate" className="flex items-center gap-1.5">
+                  Default Cost/Rate (₹)
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (optional)
+                  </span>
+                </Label>
+                <Input
+                  id="p-rate"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.defaultRate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, defaultRate: e.target.value }))
+                  }
+                  placeholder="e.g. 95.00"
+                  data-ocid="products.input"
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="p-gst">GST Rate *</Label>
                 <select
                   id="p-gst"
@@ -1526,6 +1771,13 @@ export default function Products() {
           handleBulkDelete();
         }}
         title="Delete Selected Products"
+      />
+
+      {/* Profit Margin Modal */}
+      <ProfitMarginModal
+        open={profitMarginOpen}
+        onClose={() => setProfitMarginOpen(false)}
+        products={products}
       />
     </motion.div>
   );

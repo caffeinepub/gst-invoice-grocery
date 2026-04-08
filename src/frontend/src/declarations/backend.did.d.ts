@@ -27,6 +27,7 @@ export interface Invoice {
   'date' : Time,
   'storeId' : Principal,
   'createdAt' : Time,
+  'customerMobile' : string,
   'totalCgst' : bigint,
   'totalIgst' : bigint,
   'isIgst' : boolean,
@@ -49,6 +50,7 @@ export interface LineItem {
 }
 export interface Product {
   'sku' : string,
+  'defaultRate' : [] | [bigint],
   'stockQty' : bigint,
   'storeId' : Principal,
   'name' : string,
@@ -81,11 +83,11 @@ export interface UserProfile { 'name' : string }
 export interface _SERVICE {
   'addCreditsAdmin' : ActorMethod<[Principal, bigint], undefined>,
   'addProduct' : ActorMethod<
-    [string, string, string, bigint, bigint, bigint],
+    [string, string, string, bigint, bigint, bigint, [] | [bigint]],
     Product
   >,
   'createInvoice' : ActorMethod<
-    [string, string, boolean, Array<LineItem>],
+    [string, string, string, boolean, Array<LineItem>],
     Invoice
   >,
   'deleteInvoice' : ActorMethod<[bigint], undefined>,
@@ -107,11 +109,11 @@ export interface _SERVICE {
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'updateInvoice' : ActorMethod<
-    [bigint, string, string, boolean, Array<LineItem>],
+    [bigint, string, string, string, boolean, Array<LineItem>],
     Invoice
   >,
   'updateProduct' : ActorMethod<
-    [string, string, string, bigint, bigint, bigint],
+    [string, string, string, bigint, bigint, bigint, [] | [bigint]],
     Product
   >,
   'updateProductStock' : ActorMethod<[string, bigint], undefined>,
