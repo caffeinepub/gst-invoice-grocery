@@ -26,6 +26,7 @@ import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import {
   formatBatchDate,
+  getActiveBatches,
   getBatchExpiryStatus,
   getBatches,
   getExpiryThreshold,
@@ -296,7 +297,7 @@ export default function Dashboard({ onNavigate }: Props) {
         expiryEntries.push({
           productName: p.name,
           sku: p.sku,
-          batchId: `${batch.batchId.split("-").slice(-1)[0]}…`,
+          batchId: batch.batchId,
           expiryDate: batch.expiryDate,
           qty: batch.stockQty,
           status,
@@ -366,6 +367,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {lowStockItems.map((product) => {
               const qty = Number(product.stockQty);
+              const activeBatches = getActiveBatches(product.sku);
               return (
                 <div
                   key={product.sku}
@@ -378,6 +380,16 @@ export default function Dashboard({ onNavigate }: Props) {
                     <div className="text-xs text-muted-foreground">
                       SKU: {product.sku}
                     </div>
+                    {activeBatches.length > 0 && (
+                      <div className="text-xs text-amber-600 mt-0.5">
+                        {activeBatches.map((b) => (
+                          <span key={b.batchId} className="mr-2 font-mono">
+                            {b.batchId}: {b.stockQty} pcs
+                            {b.expiryDate ? ` (exp: ${b.expiryDate})` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {qty === 0 ? (
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">

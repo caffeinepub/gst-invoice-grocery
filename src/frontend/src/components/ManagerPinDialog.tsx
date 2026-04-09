@@ -85,7 +85,7 @@ export default function ManagerPinDialog({
     const storePhone = (store?.phone ?? "").trim().replace(/\s/g, "");
     if (!storePhone) {
       setRecoveryError(
-        "No phone number found in store profile. Please contact admin: +91 7023285769",
+        "No phone number found in store profile. Please contact admin: +91 7023295769",
       );
       return;
     }
@@ -242,12 +242,12 @@ export default function ManagerPinDialog({
             <p className="text-xs text-muted-foreground">
               If you don&apos;t remember your phone number, contact admin:{" "}
               <a
-                href="https://wa.me/917023285769"
+                href="https://wa.me/917023295769"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-green-600 hover:underline"
               >
-                WhatsApp +91 7023285769
+                WhatsApp +91 7023295769
               </a>
             </p>
           </div>

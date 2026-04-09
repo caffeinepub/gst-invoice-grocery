@@ -225,10 +225,10 @@ export default function App() {
               Developed by <span className="font-medium">Ankit Verma</span> ·
               Mob:{" "}
               <a
-                href="tel:7023285769"
+                href="tel:7023295769"
                 className="text-saffron hover:underline font-medium"
               >
-                7023285769
+                7023295769
               </a>
             </p>
           </motion.div>
@@ -256,6 +256,11 @@ export default function App() {
           </AnimatePresence>
         )}
       </main>
+
+      {/* Developer credit — always visible on all screens */}
+      <div className="text-center py-1 text-[10px] text-muted-foreground/60">
+        Developed by Ankit Verma 7023295769
+      </div>
 
       {/* Mobile Bottom Nav */}
       {isLoggedIn && !isInactive && (
@@ -306,10 +311,10 @@ export default function App() {
           © {new Date().getFullYear()} BillKaro · Developed by{" "}
           <span className="text-saffron font-medium">Ankit Verma</span> · Mob:{" "}
           <a
-            href="tel:7023285769"
+            href="tel:7023295769"
             className="text-saffron hover:underline font-medium"
           >
-            7023285769
+            7023295769
           </a>
         </div>
       </footer>

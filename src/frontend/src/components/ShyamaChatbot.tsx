@@ -169,7 +169,7 @@ const KB: { keywords: string[]; answer: string }[] = [
       "recharge",
     ],
     answer:
-      "If you see 'Account Inactive': Your account needs credits from the admin to work. Share your Principal ID (shown on the inactive screen) with the admin via WhatsApp: +91 7023285769. The admin will activate your account with credits. Each invoice uses 1 credit. When credits run low, contact admin to recharge.",
+      "If you see 'Account Inactive': Your account needs credits from the admin to work. Share your Principal ID (shown on the inactive screen) with the admin via WhatsApp: +91 7023295769. The admin will activate your account with credits. Each invoice uses 1 credit. When credits run low, contact admin to recharge.",
   },
   {
     keywords: ["admin", "admin panel", "manage stores", "activate store"],
@@ -195,7 +195,7 @@ const KB: { keywords: string[]; answer: string }[] = [
   {
     keywords: ["whatsapp", "share", "send", "notify"],
     answer:
-      "BillKaro integrates with WhatsApp in multiple ways:\n1) Share invoice link with customers.\n2) Admin can send recharge notifications to store owners.\n3) Help & Support — contact admin via WhatsApp at +91 7023285769 for any issues.\nTap the green WhatsApp button wherever you see it.",
+      "BillKaro integrates with WhatsApp in multiple ways:\n1) Share invoice link with customers.\n2) Admin can send recharge notifications to store owners.\n3) Help & Support — contact admin via WhatsApp at +91 7023295769 for any issues.\nTap the green WhatsApp button wherever you see it.",
   },
   {
     keywords: [
@@ -233,7 +233,7 @@ const KB: { keywords: string[]; answer: string }[] = [
       "pin recovery",
     ],
     answer:
-      "Tap 'Forgot PIN?' on the PIN entry screen. Enter your store's registered phone number (the one saved in Store Setup). If it matches, your PIN will be reset and you can go to Store Setup to create a new one. If you don't remember the phone number either, contact support on WhatsApp: +91 7023285769.",
+      "Tap 'Forgot PIN?' on the PIN entry screen. Enter your store's registered phone number (the one saved in Store Setup). If it matches, your PIN will be reset and you can go to Store Setup to create a new one. If you don't remember the phone number either, contact support on WhatsApp: +91 7023295769.",
   },
   {
     keywords: [
@@ -275,7 +275,7 @@ function findAnswer(query: string): string {
       return entry.answer;
     }
   }
-  return "I'm not sure about that specific question. You can ask me about: creating invoices, products, barcode scanning, GST types, printer setup, account activation, or app navigation. Or contact our support: WhatsApp +91 7023285769";
+  return "I'm not sure about that specific question. You can ask me about: creating invoices, products, barcode scanning, GST types, printer setup, account activation, or app navigation. Or contact our support: WhatsApp +91 7023295769";
 }
 
 function speak(text: string) {

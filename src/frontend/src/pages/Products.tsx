@@ -55,8 +55,10 @@ import ManagerPinDialog from "../components/ManagerPinDialog";
 import {
   type ProductBatchEntry,
   addBatch,
+  addBatchWithId,
   deleteBatch,
   formatBatchDate,
+  generateBatchId,
   getActiveBatches,
   getBatchExpiryStatus,
   getBatches,
@@ -145,6 +147,8 @@ interface ImportRow {
   hsnCode: string;
   gstRate: number;
   expiryDate?: string;
+  batchNo?: string; // explicit batch number from column 8 (optional)
+  autoBatchNo?: string; // computed auto batch number for display
   error?: string;
 }
 
@@ -167,6 +171,7 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
       else if (Number.isNaN(price) || price <= 0) error = "Invalid MRP";
 
       const expiryDate = row[6] ? String(row[6]).trim() : undefined;
+      const batchNo = row[7] ? String(row[7]).trim() : undefined;
       return {
         name,
         sku,
@@ -175,6 +180,8 @@ function parseExcelRows(data: unknown[][]): ImportRow[] {
         hsnCode,
         gstRate,
         expiryDate,
+        batchNo,
+        autoBatchNo: undefined,
         error,
       };
     });
@@ -342,8 +349,11 @@ function BatchPanel({ sku, productName, onClose }: BatchPanelProps) {
                       }`}
                       data-ocid={`products.batch.item.${idx + 1}`}
                     >
-                      <TableCell className="py-1.5 font-mono text-xs text-muted-foreground max-w-[120px] truncate">
-                        {batch.batchId.split("-").slice(-1)[0]}…
+                      <TableCell
+                        className="py-1.5 font-mono text-xs text-muted-foreground max-w-[140px] truncate"
+                        title={batch.batchId}
+                      >
+                        {batch.batchId}
                       </TableCell>
                       <TableCell className="py-1.5">
                         {formatBatchDate(batch.expiryDate)}
@@ -793,10 +803,12 @@ export default function Products() {
           sku: form.sku,
           price: pricePaise,
           gstRate: BigInt(form.gstRate),
-          stockQty: BigInt(form.stockQty),
+          stockQty: 0n, // stock managed via batches
           defaultRate: defaultRateVal,
         });
-        toast.success("Product added!");
+        toast.success(
+          "Product added! Use the Batches button to add stock and expiry date.",
+        );
       }
       setExpiry(sku, form.expiryDate);
       setDialogOpen(false);
@@ -860,7 +872,18 @@ export default function Products() {
           toast.error("No valid rows found in file.");
           return;
         }
-        setImportRows(parsed);
+        // Pre-compute auto batch numbers for display
+        const batchCounters: Record<string, number> = {};
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const withBatchNos = parsed.map((row) => {
+          if (row.error) return row;
+          if (row.batchNo) return { ...row, autoBatchNo: row.batchNo };
+          const key = row.sku;
+          batchCounters[key] = (batchCounters[key] ?? 0) + 1;
+          const seq = String(batchCounters[key]).padStart(3, "0");
+          return { ...row, autoBatchNo: `B${today}-${seq}` };
+        });
+        setImportRows(withBatchNos);
         setImportProgress(null);
         setImportDialogOpen(true);
       } catch {
@@ -891,6 +914,11 @@ export default function Products() {
           gstRate: BigInt(row.gstRate),
           stockQty: BigInt(row.stockQty),
         });
+        // Always create a batch entry (stock is managed via batches)
+        const batchId = row.autoBatchNo ?? generateBatchId(row.sku);
+        addBatchWithId(row.sku, batchId, row.expiryDate ?? "", row.stockQty);
+        // Dispatch event so Dashboard refreshes expiry section
+        window.dispatchEvent(new CustomEvent("batch-updated"));
         if (row.expiryDate) {
           setExpiry(row.sku, row.expiryDate);
         }
@@ -931,12 +959,22 @@ export default function Products() {
         "HSN Code",
         "GST Rate (0/5/12/18/28)",
         "Expiry Date (YYYY-MM-DD)",
+        "Batch No (leave blank to auto-generate)",
       ],
     ];
     const sample = [
-      ["Basmati Rice 1kg", "RICE001", 120, 50, "1006", 5, "2026-12-31"],
-      ["Atta 5kg", "ATTA001", 250, 30, "1101", 5, "2026-06-30"],
-      ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0, ""],
+      [
+        "Basmati Rice 1kg",
+        "RICE001",
+        120,
+        50,
+        "1006",
+        5,
+        "2026-12-31",
+        "B20241201-001",
+      ],
+      ["Atta 5kg", "ATTA001", 250, 30, "1101", 5, "2026-06-30", ""],
+      ["Sugar 1kg", "SUGAR001", 45, 100, "1701", 0, "", ""],
     ];
     const ws = XLS.utils.aoa_to_sheet([...headers, ...sample]);
     ws["!cols"] = [
@@ -947,6 +985,7 @@ export default function Products() {
       { wch: 12 },
       { wch: 24 },
       { wch: 22 },
+      { wch: 30 },
     ];
     const wb = XLS.utils.book_new();
     XLS.utils.book_append_sheet(wb, ws, "Products");
@@ -1451,6 +1490,7 @@ export default function Products() {
                   {importRows.some((r) => r.expiryDate) && (
                     <TableHead>Expiry</TableHead>
                   )}
+                  <TableHead>Batch No</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1480,6 +1520,9 @@ export default function Products() {
                         {row.expiryDate || "—"}
                       </TableCell>
                     )}
+                    <TableCell className="text-xs font-mono text-muted-foreground">
+                      {row.autoBatchNo || "—"}
+                    </TableCell>
                     <TableCell>
                       {row.error ? (
                         <span className="text-xs text-destructive">
@@ -1633,55 +1676,45 @@ export default function Products() {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="p-stock">Stock Qty *</Label>
+                <Label htmlFor="p-stock">
+                  Stock Qty{" "}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (managed via Batch Detail)
+                  </span>
+                </Label>
                 <Input
                   id="p-stock"
                   type="number"
                   min="0"
                   value={form.stockQty}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, stockQty: e.target.value }))
-                  }
-                  placeholder="e.g. 100"
-                  required
+                  disabled
+                  className="bg-muted cursor-not-allowed"
+                  placeholder="0"
                   data-ocid="products.input"
                 />
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="p-expiry" className="flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                  Expiry Date
+                  Expiry Date{" "}
                   <span className="text-xs text-muted-foreground font-normal">
-                    (optional)
+                    (managed via Batch Detail)
                   </span>
                 </Label>
                 <Input
                   id="p-expiry"
                   type="date"
                   value={form.expiryDate}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, expiryDate: e.target.value }))
-                  }
+                  disabled
+                  className="bg-muted cursor-not-allowed"
                   data-ocid="products.input"
                 />
-                {form.expiryDate && (
-                  <p
-                    className={`text-xs ${
-                      getExpiryStatus(form.expiryDate) === "expired"
-                        ? "text-red-600"
-                        : getExpiryStatus(form.expiryDate) === "expiring"
-                          ? "text-amber-600"
-                          : "text-muted-foreground"
-                    }`}
-                  >
-                    {getExpiryStatus(form.expiryDate) === "expired" &&
-                      "⚠ This product has already expired"}
-                    {getExpiryStatus(form.expiryDate) === "expiring" &&
-                      "⚠ This product expires within 30 days"}
-                    {getExpiryStatus(form.expiryDate) === "ok" &&
-                      `Expires: ${formatExpiryDisplay(form.expiryDate)}`}
-                  </p>
-                )}
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-1">
+                  💡 Stock quantity and expiry date are managed via{" "}
+                  <strong>Batch Detail</strong> after saving the product. Use
+                  the Batches button in the product list to add stock and expiry
+                  dates.
+                </p>
               </div>
             </div>
             <DialogFooter>

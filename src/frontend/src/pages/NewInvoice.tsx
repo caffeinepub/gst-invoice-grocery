@@ -790,9 +790,10 @@ export default function NewInvoice() {
                                 key={`${p.sku}::${batch.batchId}`}
                                 value={`${p.sku}::${batch.batchId}`}
                               >
-                                {p.name} — MRP: {mrpStr}
-                                {costStr} | Exp: {batch.expiryDate} | Qty:{" "}
-                                {batch.stockQty} (GST: {p.gstRate.toString()}%)
+                                {p.name} — Batch: {batch.batchId} | Exp:{" "}
+                                {batch.expiryDate || "—"} | Qty:{" "}
+                                {batch.stockQty} | MRP: {mrpStr}
+                                {costStr} (GST: {p.gstRate.toString()}%)
                               </SelectItem>
                             );
                           });

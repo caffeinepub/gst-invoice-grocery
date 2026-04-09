@@ -613,7 +613,7 @@ export default function ThermalReceipt({
           marginTop: "2px",
         }}
       >
-        Developed by Ankit Verma mob 7023285769
+        Developed by Ankit Verma 7023295769
       </div>
 
       {/* 27. Divider */}

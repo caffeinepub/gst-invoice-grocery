@@ -42,6 +42,36 @@ export function addBatch(
   return batch;
 }
 
+/** Add a batch with a specific batchId (e.g. auto-generated from import) */
+export function addBatchWithId(
+  sku: string,
+  batchId: string,
+  expiryDate: string,
+  qty: number,
+): ProductBatchEntry {
+  const batch: ProductBatchEntry = {
+    batchId,
+    expiryDate,
+    stockQty: qty,
+    createdAt: Date.now(),
+  };
+  const batches = getBatches(sku);
+  batches.push(batch);
+  setBatches(sku, batches);
+  return batch;
+}
+
+/** Generate an auto batch number like B20240115-001 */
+export function generateBatchId(sku: string): string {
+  const today = new Date();
+  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+  const existing = getBatches(sku).filter((b) =>
+    b.batchId.startsWith(`B${dateStr}`),
+  );
+  const seq = String(existing.length + 1).padStart(3, "0");
+  return `B${dateStr}-${seq}`;
+}
+
 function isExpiredDate(dateStr: string): boolean {
   if (!dateStr) return false;
   const today = new Date();

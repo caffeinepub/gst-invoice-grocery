@@ -313,7 +313,7 @@ export default function HelpSupport() {
               </p>
             </div>
             <a
-              href="https://wa.me/917023285769?text=Hi%2C%20I%20need%20help%20with%20BillKaro%20GST%20Invoice%20App"
+              href="https://wa.me/917023295769?text=Hi%2C%20I%20need%20help%20with%20BillKaro%20GST%20Invoice%20App"
               target="_blank"
               rel="noopener noreferrer"
               data-ocid="help.support.button"
@@ -331,12 +331,12 @@ export default function HelpSupport() {
               Chat on WhatsApp
             </a>
             <a
-              href="tel:7023285769"
+              href="tel:7023295769"
               data-ocid="help.support.link"
               className="flex items-center justify-center gap-3 w-full py-3 rounded-2xl bg-white border-2 border-green-200 hover:border-green-400 active:scale-95 text-green-700 font-semibold text-sm transition-all"
             >
               <Phone className="w-5 h-5" />
-              Call: +91 7023285769
+              Call: +91 7023295769
             </a>
             <div className="flex items-center justify-center gap-2 pt-1">
               <CheckCircle2 className="w-4 h-4 text-green-500" />

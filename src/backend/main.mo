@@ -9,9 +9,9 @@ import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import List "mo:core/List";
-import Migration "migration";
 
-(with migration = Migration.run)
+
+
 actor {
   let ADMIN_PRINCIPAL : Principal = Principal.fromText("f3axn-iphna-qs373-xc2my-2epru-xspto-xluny-flo3l-4nqhb-j2e4r-mqe");
 

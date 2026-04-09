@@ -59,12 +59,12 @@ export default function InactiveAccount({
         <p className="text-sm text-orange-800">
           WhatsApp:{" "}
           <a
-            href="https://wa.me/917023285769"
+            href="https://wa.me/917023295769"
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold underline"
           >
-            +91 7023285769
+            +91 7023295769
           </a>
         </p>
       </div>
@@ -101,6 +101,9 @@ export default function InactiveAccount({
       >
         Logout
       </Button>
+      <p className="mt-4 text-[10px] text-muted-foreground/60">
+        Developed by Ankit Verma 7023295769
+      </p>
     </motion.div>
   );
 }
